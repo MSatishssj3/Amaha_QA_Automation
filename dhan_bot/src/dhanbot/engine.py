@@ -101,7 +101,8 @@ class Engine:
     def __init__(self, cfg: AppConfig, *, mode: str | None = None, clock: RealClock | None = None,
                  endpoints: Endpoints | None = None, instruments: InstrumentStore | None = None,
                  strategy: Strategy | None = None, use_journal: bool = True, use_control: bool = True,
-                 use_telegram: bool = True, record: bool | None = None) -> None:
+                 use_telegram: bool = True, record: bool | None = None,
+                 extra_risk_checks: list | None = None, order_listeners: list | None = None) -> None:
         self.cfg = cfg
         self.mode = mode or cfg.mode.mode
         if self.mode not in ("live", "paper", "replay"):
@@ -121,6 +122,9 @@ class Engine:
         self.strategy = strategy
         self.use_journal, self.use_control, self.use_telegram = use_journal, use_control, use_telegram
         self.record = cfg.feed.record_ticks if record is None else record
+        # plug-ins attached before the strategy starts, so they see every order from the first one
+        self._extra_risk_checks = list(extra_risk_checks or [])
+        self._extra_order_listeners = list(order_listeners or [])
         rate_now = time.monotonic if type(self.clock) is RealClock else self.clock.time
         self.limiter = OrderRateLimiter(cfg.rate_limits.orders_per_sec, cfg.rate_limits.orders_per_min,
                                         cfg.rate_limits.order_api_calls_per_day, rate_now)
@@ -238,6 +242,8 @@ class Engine:
                                working_exit_qty=self._working_exit_qty,
                                working_entries=self._working_entries)
         self.oms.listeners.append(self._on_order_event)
+        self.oms.listeners.extend(self._extra_order_listeners)
+        self.risk.extra_checks.extend(self._extra_risk_checks)
         self.oms.trade_listeners.append(self._on_trade_closed)
         self.oms.reject_listeners.append(self.risk.on_broker_reject)
         self.ks.listeners.append(self._on_killswitch)

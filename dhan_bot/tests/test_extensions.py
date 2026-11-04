@@ -163,3 +163,48 @@ async def test_engine_refuses_second_instance(tmp_path):
             if not e._shutting_down:
                 await e.shutdown()
         await mock.stop()
+
+
+async def test_engine_constructor_plugins_see_the_first_order(tmp_path):
+    from dhanbot.clock import SimClock
+    from dhanbot.engine import Engine
+    from dhanbot.strategy import Strategy
+
+    from .test_engine_live import sim_start
+
+    class BuyAtStart(Strategy):
+        name = "buy_at_start"
+        params = {}
+
+        def subscriptions(self):
+            return ["RELIANCE"], []
+
+        def on_start(self, ctx):
+            self.o = None
+
+        def on_tick(self, ctx, tick):
+            if self.o is None:  # the very first order the strategy ever places
+                self.o = ctx.buy("RELIANCE", 1)
+
+    clock = SimClock(sim_start(), speed=20)
+    mock = MockDhan(clock=clock, client_id=CID)
+    mock.ips["primaryIP"] = "203.0.113.10"
+    ep = await mock.start()
+    seen_checks, seen_events = [], []
+    data = {"paths": {"data_dir": str(tmp_path)}, "perf": {"gc_freeze": False},
+            "instruments": [{"alias": "RELIANCE", "segment": "NSE_EQ", "trading_symbol": "RELIANCE", "max_qty": 5}]}
+    cfg = load_config(data=data, env={"DHAN_CLIENT_ID": CID, "DHAN_ACCESS_TOKEN": mock.token})
+    strat = BuyAtStart()
+    e = Engine(cfg, clock=clock, endpoints=ep, strategy=strat, use_control=False, use_telegram=False,
+               extra_risk_checks=[lambda o, record: seen_checks.append(o.qty) or Decision(False, "budget: test deny")],
+               order_listeners=[seen_events.append])
+    try:
+        await e.start()
+        from .helpers import wait_for as _wait
+
+        assert await _wait(lambda: strat.o is not None, 10)
+        assert seen_checks == [1] and strat.o.reason == "budget: test deny"
+        assert seen_events and seen_events[0].kind == "rejected"
+    finally:
+        await e.shutdown()
+        await mock.stop()
