@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dhanbot"
+version = "0.1.0"
+description = "Low-latency trading framework for the Dhan (DhanHQ v2) broker API"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "aiohttp>=3.10",
+    "orjson>=3.10",
+    "pyotp>=2.9",
+    "uvloop>=0.21; sys_platform != 'win32'",
+    "tzdata; sys_platform == 'win32'",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    # Only used by tests to prove our binary-feed parser matches the official SDK byte-for-byte.
+    "dhanhq==2.3.0",
+]
+
+[project.scripts]
+dhanbot = "dhanbot.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+dhanbot = ["py.typed"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+addopts = "-q"

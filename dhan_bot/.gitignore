@@ -1,0 +1,26 @@
+# secrets
+.env
+*.env
+!.env.example
+
+# runtime data (tokens, journals, recordings, instrument cache, kill file)
+data/
+logs/
+*.db
+*.db-wal
+*.db-shm
+*.bin
+token.json
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+
+# local config (copy config.example.toml -> config.toml)
+config.toml

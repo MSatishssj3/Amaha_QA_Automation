@@ -1,0 +1,127 @@
+# dhanbot configuration. Copy to config.toml and edit.
+# Unknown keys are treated as errors, so a typo fails at startup instead of being ignored.
+# Times are IST. Money values are in rupees.
+
+[mode]
+mode = "paper"                 # "paper" = live market data, simulated orders (safe default)
+                               # "live"  = real orders. ALSO requires the --live flag on `dhanbot run`.
+
+[dhan]
+auth = "token"                 # token: paste DHAN_ACCESS_TOKEN in .env (or run `dhanbot login`)
+                               # totp : automatic daily login with DHAN_PIN + DHAN_TOTP_SECRET
+                               # oauth: DHAN_APP_ID + DHAN_APP_SECRET, `dhanbot login --oauth`
+expected_ip = ""               # optional: this host's static public IP; checked before live trading
+cid_prefix = "DB"              # correlationId prefix that marks orders as placed by this bot
+
+[session]
+profile = "nse"                # "nse" (09:15-15:30) or "mcx" (09:00-23:30). Times below override it.
+entry_start = "09:15"          # no new entries before this
+entry_end = "15:00"            # no new entries after this (exits still allowed)
+squareoff_time = "15:10"       # flatten INTRADAY positions (before Dhan's own auto square-off)
+squareoff_enabled = true
+holidays_file = "holidays.txt" # YYYY-MM-DD per line; the bot exits on these days
+
+[feed]
+stale_after_s = 5.0            # an instrument with no tick for this long blocks new entries
+ltt_mode = "auto"              # auto-detect how Dhan encodes last-trade-time
+record_ticks = true            # write raw feed frames to data/ticks/ for replay / backtests
+
+[execution]
+default_order_type = "LIMIT"   # LIMIT = marketable limit (price capped); MARKET also allowed
+validity = "DAY"
+entry_buffer_ticks = 2         # marketable limit = best ask (buy) / best bid (sell) +/- N ticks
+exit_buffer_ticks = 3
+entry_ttl_ms = 3000            # an unfilled entry after this long is re-priced once, then cancelled
+reprice_once = true
+exit_mode = "super_order"      # super_order: SL/target legs held at Dhan (survive a bot crash)
+                               # bot_managed: SL-limit order at exchange + target watched by the bot
+                               # none       : no automatic protective orders
+sl_limit_buffer_ticks = 5      # SL-limit price = trigger -/+ N ticks
+allow_slicing = false          # use /orders/slicing when qty exceeds exchange freeze qty
+flatten_scope = "bot"          # "bot" = only touch positions this bot opened; "all" = whole account
+order_timeout_ms = 1500        # after this the order is resolved by correlationId (never blind-retried)
+
+[risk]
+max_daily_loss_inr = 2000      # net of estimated charges. Breach -> HALT: cancel all, flatten, stop for the day
+daily_profit_lock_inr = 0      # >0: stop new entries after this much profit
+max_order_value_inr = 100000
+max_gross_exposure_inr = 300000
+max_open_positions = 3
+max_orders_per_day = 1000
+max_trades_per_instrument = 20
+max_consecutive_losses = 5     # -> PAUSE (no new entries)
+price_band_pct = 2.0           # reject limit prices further than this from LTP (fat-finger guard)
+price_band_options_pct = 10.0
+reject_storm_count = 5         # this many broker rejects ...
+reject_storm_window_s = 60     # ... within this window -> HALT
+margin_check = true
+include_manual_trades = false  # true: daily-loss limit uses whole-account P&L from Dhan
+broker_killswitch_on_halt = false  # true: also activate Dhan's kill switch (no trading rest of day)
+pnl_exit_backstop = true       # register Dhan's server-side P&L exit at 1.25x the limits above
+
+[rate_limits]                  # Dhan/SEBI ceilings are 10/s and 250/min; config can only go lower
+orders_per_sec = 10
+orders_per_min = 250
+order_api_calls_per_day = 4500
+
+[charges]                      # rough cost model for net P&L (paper + risk checks)
+brokerage_per_order_inr = 20
+statutory_pct = 0.03
+
+[paper]
+ack_ms = 30                    # simulated broker acknowledgement latency
+slippage_ticks = 1
+
+[reconcile]
+orders_interval_s = 3
+positions_interval_s = 10
+funds_interval_s = 60
+
+[instrument_master]
+tick_unit = "auto"             # unit of SEM_TICK_SIZE in Dhan's CSV; check with `dhanbot check`
+
+# --- instruments the bot may stream / trade ---------------------------------------------------
+# Find ids with:  dhanbot instruments search RELIANCE
+[[instruments]]
+alias = "RELIANCE"
+segment = "NSE_EQ"
+trading_symbol = "RELIANCE"
+mode = "full"                  # ticker | quote | full (full = 5-level depth; needed for best paper fills)
+product = "INTRADAY"
+max_qty = 10                   # max units per order
+
+[[instruments]]
+alias = "NIFTY"
+segment = "IDX_I"
+security_id = 13               # NIFTY 50 index: signals only, never traded
+mode = "ticker"
+
+# Exchange freeze quantities (units) per underlying, used for slicing / rejection.
+[freeze_qty]
+# NIFTY = 1800
+
+# --- strategy ----------------------------------------------------------------------------------
+[strategy]
+name = "ema_cross"             # example only. Your own: "my_strats/my_strategy.py:MyStrategy"
+enabled = true
+
+[strategy.params]
+symbol = "RELIANCE"
+timeframe = "1m"
+fast = 9
+slow = 21
+qty = 1
+stop_pct = 0.5
+target_pct = 1.0
+
+[telegram]
+enabled = false                # needs TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID in .env
+
+[perf]
+uvloop = true
+gc_freeze = true
+strategy_tick_budget_us = 50
+
+[paths]
+data_dir = "data"
+log_dir = "logs"
