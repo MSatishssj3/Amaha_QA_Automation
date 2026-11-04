@@ -17,6 +17,7 @@ _REGISTRY = {
     "ai_analyst": "tradingbots.bots.ai_analyst.bot:AIAnalystBot",
     "execution": "tradingbots.bots.execution.bot:ExecutionBot",
     "notifier": "tradingbots.bots.notifier.bot:NotifierBot",
+    "backup": "tradingbots.bots.backup.bot:BackupBot",
 }
 BOT_NAMES = tuple(_REGISTRY)
 

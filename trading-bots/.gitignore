@@ -28,3 +28,7 @@ venv/
 # `bots demo` working folder, and your personal strategy config (`bots init` creates it from the template)
 .demo/
 config/dhanbot.toml
+
+# backup archives (bots backup / the backup bot) hold your trading records
+backups/
+tax-sales-*.csv

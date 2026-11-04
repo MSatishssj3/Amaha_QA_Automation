@@ -183,3 +183,15 @@ def test_tax_page_lists_what_needs_input_and_adds_a_purchase(app):
     assert not at.exception
     sent = [d for t, d in bots.seen if t == topics.cmd("tax", "add_lot")]
     assert sent == [{"symbol": "TCS", "qty": 2, "buy_date": "2019-01-01", "price": 1900.0, "fmv_2018": None, "note": ""}]
+
+
+def test_backups_tab_lists_archives_and_backs_up_now(app):
+    _, bots = app
+    at = signed_in().run()
+    at.switch_page("pages/settings.py").run()
+    assert not at.exception, [e.value for e in at.exception]
+    vals = {m.label: m.value for m in at.metric}
+    assert vals["Kept"] == "1 backup" and vals["Off-machine copy"] == "off"
+    next(b for b in at.button if b.label == "Back up now").click().run()
+    assert any("Saved trading-bots-20261105-101500.tar.gz (31 files, 2.4 MB), verified." in x.value for x in at.success)
+    assert [t for t, _ in bots.seen].count(topics.cmd("backup", "run")) == 1

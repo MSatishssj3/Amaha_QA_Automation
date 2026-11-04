@@ -123,6 +123,15 @@ cess_pct = 4.0                 # health and education cess
 long_term_months = 12          # listed shares are long-term when held MORE than 12 months
 history_from = ""              # fetch trade history from YYYY-MM-DD; "" = start of the previous financial year
 
+[backup]                       # daily archive of config/ and data/ (never .env, the message bus or tokens)
+enabled = true
+at = "23:45"                   # IST, every day
+dir = "backups"
+keep_daily = 7                 # newest backup of each of the last 7 days ...
+keep_weekly = 4                # ... plus the newest of each of the last 4 weeks
+include_ticks = false          # raw feed recordings can be large
+rclone_remote = ""             # e.g. "gdrive:trading-bots" to copy each backup off the machine (needs rclone)
+
 [dashboard]
 address = "127.0.0.1"          # keep it local; use an SSH tunnel to reach it on a server
 port = 8501
