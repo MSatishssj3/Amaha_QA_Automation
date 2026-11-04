@@ -110,15 +110,27 @@ class AIPrices(_Strict):
 
 
 class AICfg(_Strict):
+    """The AI analyst. Its output is advisory only: nothing it writes is ever turned into an order."""
+
     enabled: bool = True
+    # anthropic: Claude (needs ANTHROPIC_API_KEY in .env). stub: rule-based demo reports, no AI, no cost.
+    provider: Literal["anthropic", "stub"] = "anthropic"
     model: str = "claude-opus-5-5"
+    # Claude Opus 5.5 defaults to "medium" when unset; analysis is intelligence-sensitive, so "high".
     effort: Literal["low", "medium", "high", "xhigh", "max"] = "high"
-    daily_usd_budget: float = Field(1.0, ge=0)
+    daily_usd_budget: float = Field(1.0, ge=0)  # runs that would exceed it are skipped (0 = no AI spend)
     max_stocks: int = Field(25, ge=1, le=200)
-    max_output_tokens: int = Field(16000, ge=1024, le=64000)
-    refusal_fallbacks: bool = True
+    max_output_tokens: int = Field(24000, ge=1024, le=128000)  # includes thinking; responses are streamed
+    refusal_fallbacks: bool = True  # server-side fallback ("default" routing) when a request is declined
     nightly_batch: bool = False  # per-stock deep dives through the Message Batches API (half price)
+    deep_dive_at: str = "19:30"  # when the nightly batch is submitted (trading days)
+    timeout_s: float = Field(900.0, ge=30)
     prices: AIPrices = AIPrices()
+
+    @field_validator("deep_dive_at")
+    @classmethod
+    def _dd(cls, v: str) -> str:
+        return _hhmm(v)
 
 
 class BudgetCfg(_Strict):
