@@ -234,7 +234,8 @@ def equity_curve(points: list[tuple[float, float, str]], t: dict[str, Any], heig
     fig.add_annotation(x=n[-1], y=y[-1], text=f"  {T.inr(y[-1], signed=True)}", showarrow=False, xanchor="left",
                        font=dict(color=t["ink"], size=12))
     T.style(fig, t, height=height, margin=dict(l=8, r=72, t=8, b=8))
+    step = max(1, math.ceil(len(n) / 12))  # whole trade numbers only, never a repeated label
     fig.update_xaxes(title=dict(text="closed trades, oldest first", font=dict(color=t["muted"], size=11)),
-                     tickformat="d")
+                     tickmode="linear", tick0=1, dtick=step, range=[0.5, len(n) + 0.5])
     inr_axis(fig, y)
     return fig

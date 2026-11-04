@@ -39,9 +39,8 @@ from dhanbot.clock import ist_datetime
 EQUITY_SEGMENTS = {"NSE_EQ", "BSE_EQ"}
 INTRADAY_PRODUCTS = {"INTRADAY", "CO", "BO"}
 GRANDFATHER_BEFORE = date(2018, 2, 1)
-LABELS = {"intraday": "Intraday equity (speculative)", "fno": "F&O and other derivatives (business)",
-          "stcg": "Short-term capital gains", "ltcg": "Long-term capital gains", "unmatched": "Needs a purchase",
-          "total": "Total"}
+LABELS = {"intraday": "Intraday (speculative)", "fno": "F&O (business)", "stcg": "Short-term gains",
+          "ltcg": "Long-term gains", "unmatched": "Needs a purchase", "total": "Total"}
 CATEGORIES = ("intraday", "fno", "stcg", "ltcg")
 
 

@@ -8,7 +8,11 @@ A team of small bots that work together around your Dhan account. Each bot does 
 - tracks where your money goes;
 - enforces a daily budget on every trade;
 - runs your trading strategy;
-- asks Claude for a plain-language read of it all.
+- asks Claude for a plain-language read of it all;
+- keeps a performance journal of every trade;
+- estimates your Indian tax and prepares statements for your CA;
+- sends alerts and a daily summary to Telegram and email;
+- backs everything up every night.
 
 A password-protected web dashboard shows the team's work and lets you control it.
 
@@ -33,6 +37,10 @@ A password-protected web dashboard shows the team's work and lets you control it
 | **budget** | Today's money limits and what has been used, including trades you place yourself in the Dhan app | budget history, alerts | `budget.policy`, `budget.usage` |
 | **execution** | Runs your [dhan_bot](https://github.com/MSatishssj3/Amaha_QA_Automation/tree/cl/epic-cray-ipx99n/dhan_bot) strategy with the budget guard attached | the trading engine | orders, fills, P&L, state |
 | **ai_analyst** | Claude reads the tables and writes reports | reports, its own cost log | `ai.report`, `ai.cost` |
+| **journal** | How your trading is really going: every round trip, win rate, expectancy, drawdown, charges and slippage, with your own tags and notes | `perf_*` tables, `journal.db` (your notes) | `journal.updated` |
+| **tax** | Estimated Indian tax per financial year (intraday, F&O, short- and long-term gains) and statements for your CA | `tax_*` tables, `tax.db` (purchases you add) | - |
+| **notifier** | Alerts and a daily summary on Telegram and email; commands from your Telegram chat | - | - |
+| **backup** | A verified archive of `config/` and `data/` every night, optional cloud copy | `backups/` | `backup:status` |
 | **supervisor** | Starts every bot in its own process and restarts any that crash or hang | - | status |
 | **dashboard** | What you look at and click | - | commands to the bots |
 
@@ -45,6 +53,7 @@ A password-protected web dashboard shows the team's work and lets you control it
    └── orders ── execution (dhan_bot engine + BudgetGuard) ◄┘                                 ▼
                      │ orders, fills, P&L ──► tables, money, budget              dashboard (login)
            supervisor: one process per bot, restarts, health
+           journal and tax (read the tables) · notifier (alerts -> Telegram, email) · backup (nightly archive)
 ```
 
 The bots talk only through a **message bus**: events, request/reply commands and a small key-value
@@ -213,11 +222,87 @@ duty and GST), ledger, holdings, positions and funds. It keeps:
   on the dashboard;
 - a summary: net worth, charges this month and year, and XIRR.
 
+## Performance journal
+
+The journal bot turns your trades into **round trips**, from flat back to flat: scaling in and out stays one trade,
+and a reversal is split. It covers the engine's trades and the ones you place yourself, with the broker's actual
+charges. Paper trades are kept in a separate book, so they never mix with real money. For engine trades it also
+records **slippage** against the price the engine expected, and how each trade ended: target, stop-loss,
+square-off and so on.
+
+The Performance page shows, for any period and source:
+- net P&L, win rate, expectancy, payoff, profit factor, max drawdown, streaks, and charges against gross profit;
+- an equity curve;
+- P&L by hour of entry, weekday and stock;
+- tables of how trades ended, how long they were held, and your tags.
+
+You can tag trades (`breakout`, `news`, `revenge` ...) and add notes in the journal table; tags get their own
+breakdown. The AI analyst and the daily summary use these figures too.
+
+![Performance](docs/images/performance.png)
+
+## Tax (India)
+
+The tax bot estimates the tax on your trades for each financial year (1 April to 31 March). It is **an estimate to
+discuss with your CA, not tax advice**.
+- **Categories.** Every sale is matched first in, first out to its purchase and counted as one of:
+  - intraday equity: speculative income, including same-day delivery buys and sells, which are netted;
+  - F&O and other derivatives: business income;
+  - short-term capital gains (held up to 12 months);
+  - long-term capital gains (held more than 12 months).
+- **Rates.** Defaults are for tax year 2026-27: short-term 20%, long-term 12.5% above ₹1.25 lakh a year, intraday
+  and F&O at your slab rate, 4% cess. The surcharge on capital gains is capped at 15%. Set your slab and surcharge
+  in `[tax]`.
+- **Rules applied.**
+  - STT is not deductible from capital gains; for business income every charge counts.
+  - Shares bought before 1 Feb 2018 can use their 31 Jan 2018 price (grandfathering).
+  - Losses are set off within the year: a short-term loss against long-term gains; an F&O loss against
+    intraday, short- and long-term gains, highest rate first; an intraday loss only against intraday gains.
+- **Purchases are never guessed.** The bot fetches your broker trade history back to the previous financial year.
+  A sale or holding older than that is listed under **Needs your input** on the Tax page, where you add its date
+  and price.
+- **Planning.** The page shows when each lot you hold turns long-term ("INFY: 12 days to go").
+- **For your CA.** `bots tax report --fy 2026-27` (or the page's download buttons) gives every sale as CSV.
+- **Not covered.** Losses carried in from earlier years, your other income, options that expired without a closing
+  trade, and splits or bonus issues (add those as purchases).
+
+![Tax](docs/images/tax.png)
+
+## Notifications (Telegram and email)
+
+The notifier sends WARNING and ERROR alerts to Telegram, plus a few chosen INFO ones: engine started, the day
+report, the budget summary, AI reports. It also sends a daily summary at 15:50 on trading days: P&L, budget, closed
+trades, money, AI headline and bot health.
+- **Email** gets the daily summary and ERROR alerts.
+- **Repeats** are sent at most once per 10 minutes. During quiet hours (22:00-07:00) only ERROR alerts go out.
+- **Telegram commands** come from your chat only: `/status`, `/pnl`, `/positions`, `/budget`, `/report`, `/ai`,
+  `/pause`, `/resume`, `/flatten` and `/kill`. The last two need `/confirm`.
+- **Setup.**
+  1. Create a bot with @BotFather and put `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `.env`.
+  2. For email, add `SMTP_*` and `EMAIL_TO`.
+  3. Press **Send a test message** in Settings -> Notifications, or run `bots notify test`.
+
+## Backups
+
+Every night at 23:45 the backup bot writes `backups/trading-bots-YYYYMMDD-HHMMSS.tar.gz`.
+- **Contents:** your settings and every bot's data: tables, databases, reports, the engine's state.
+- **Never included:** `.env`, the message bus, access tokens, and caches that are downloaded again.
+- **Consistency:** databases are copied consistently even while in use.
+- **Checked:** each archive is read back against its checksums before it is kept.
+- **Retention:** the newest backup of each of the last 7 days, plus each of the last 4 weeks.
+- **Off-machine copy:** set `backup.rclone_remote` (e.g. `gdrive:trading-bots`) with [rclone](https://rclone.org)
+  installed.
+- **A failure** is an ERROR alert on your phone.
+
+**Restore:** stop the team, then run `bots restore backups/<archive>`. It refuses while any bot runs and checks every
+checksum first. Your current `config/` and `data/` are moved aside (never deleted), and your current access token is
+kept.
+
 ## Dashboard
 
-The pages are Overview, Live market, Stock history, Money, Daily budget, Trading, AI insights,
-Tables (browse any table, download CSV) and Settings. Settings covers the platform, watchlist,
-schedules, AI options, the Dhan token and version history with one-click rollback.
+The pages are Overview, Live market, Stock history, Money, Daily budget, Trading, Performance, Tax, AI insights,
+Tables (browse any table, download CSV) and Settings. Settings covers the platform, watchlist, schedules, AI options,
+notifications, backups, the Dhan token and version history with one-click rollback.
 - **Access:** the dashboard listens on `127.0.0.1` and needs your password. On a server, reach it
   through an SSH tunnel.
 - **Themes:** light and dark.
@@ -230,12 +315,16 @@ schedules, AI options, the Dhan token and version history with one-click rollbac
 | `bots init` | create the config files from templates |
 | `bots set-password` | set the dashboard password |
 | `bots check [--login]` | read-only checks (with `--login`, a TOTP login if no token is cached) |
-| `bots demo [--speed 60] [--ai] [--minutes N]` | the whole team on the simulated exchange |
+| `bots demo [--speed 60] [--ai] [--notify] [--minutes N]` | the whole team on the simulated exchange |
 | `bots run --all` | every bot + the dashboard, supervised (what the server runs) |
 | `bots run <bot>` / `bots run dashboard` | one bot in the foreground |
 | `bots status` | health of every bot |
 | `bots tables list` / `show <t>` / `export <t> --out f.csv` | look at the tables |
 | `bots ai test` | one tiny Claude call to check the key |
+| `bots notify test` / `summary` | a test message on Telegram and email / today's summary now |
+| `bots tax report [--fy 2026-27] [--out f.csv]` | the year's estimated tax, and every sale as CSV for your CA |
+| `bots backup now` / `list` / `verify <archive>` | back up now, list the archives, check one |
+| `bots restore <archive> [--yes]` | put a backup back (the team must be stopped) |
 | `bots config get [key]` / `set a.b=value ...` / `history` / `rollback N` | settings |
 
 All commands take `--dir <project folder>` (default: the current folder).
@@ -278,3 +367,5 @@ the table schemas (`platforms/normalize.py`), and register the adapter in `platf
 - **Data plan.** Dhan's historical candles need the same Data API plan as the live feed.
 - **AI cost.** The cost estimates above are rough. The AI insights page shows your real usage.
 - **Holidays.** Fill in `config/holidays.txt` each year. Otherwise only weekends count as closed.
+- **Tax.** The tax figures are an estimate under the rules listed above; rates change with each Finance Act.
+  Check the `[tax]` rates every April and confirm the result with your CA before filing.

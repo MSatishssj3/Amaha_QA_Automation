@@ -20,9 +20,15 @@ import shutil
 import time
 from pathlib import Path
 
+from dhanbot.clock import ist_datetime
+
 from ...core import topics
 from ...core.bot import Bot
 from . import archive as AR
+
+
+def _now() -> str:
+    return f"{ist_datetime(time.time()):%Y-%m-%d %H:%M:%S} IST"
 
 
 class BackupBot(Bot):
@@ -76,11 +82,11 @@ class BackupBot(Bot):
                     if not res["upload"]["copied"]:
                         await self.alert(f"backup saved here but not copied to {b.rclone_remote}: "
                                          f"{res['upload']['error']}", "WARNING", key="backup-upload")
-                self.last = {"saved": True, "reason": reason, "time": time.strftime("%Y-%m-%d %H:%M:%S"), **res}
+                self.last = {"saved": True, "reason": reason, "time": _now(), **res}
                 await self.alert(f"backup saved: {res['file']} ({res['files']} files, {res['size'] / 1e6:.1f} MB)",
                                  "INFO", key="backup-done")
             except Exception as e:
-                self.last = {"saved": False, "reason": reason, "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+                self.last = {"saved": False, "reason": reason, "time": _now(),
                              "error": f"{type(e).__name__}: {e}"}
                 self._error("backup", e)
                 await self.alert(f"backup FAILED: {type(e).__name__}: {e}", "ERROR", key="backup-failed")
