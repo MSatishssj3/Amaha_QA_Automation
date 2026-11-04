@@ -55,6 +55,7 @@ class Bot:
         self.counters: dict[str, int] = {"messages": 0, "errors": 0, "commands": 0}
         self.last_error = ""
         self.on(topics.CONFIG_CHANGED, self._on_config_changed)
+        self.command("shutdown", self._cmd_shutdown)  # graceful stop on every OS (the supervisor uses it)
         self.configure()
 
     # ---- declaration API ----------------------------------------------------------------------
@@ -198,6 +199,13 @@ class Bot:
 
     def stop(self) -> None:
         self._stop.set()
+
+    async def _cmd_shutdown(self, data: dict[str, Any]) -> dict[str, Any]:
+        # A shutdown sent to a previous run of this bot (still on the bus) must not stop this one.
+        if float(data.get("ts") or 0) < self.started_at:
+            return {"stopping": False, "ignored": "sent before this run started"}
+        asyncio.get_running_loop().call_later(0.05, self.stop)  # reply first, then stop
+        return {"stopping": True}
 
     async def _inbox(self) -> None:
         tlist = self.subscribed_topics

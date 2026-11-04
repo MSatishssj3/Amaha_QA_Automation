@@ -34,7 +34,7 @@ bots = "tradingbots.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-tradingbots = ["templates/*", "py.typed"]
+tradingbots = ["templates/*", "py.typed", "dashboard/.streamlit/config.toml"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

@@ -241,3 +241,16 @@ def test_table_store_append_replace_compact_and_query(tmp_path):
     store.drop_partition("bars_1m", "2026-11-05")
     assert reader.count("bars_1m") == 2
     assert "bars_1m" in reader.available()
+
+
+async def test_bus_recent_is_a_read_only_peek(bus_pair):
+    a, b = bus_pair
+    for i in range(5):
+        await a.publish("t.alert", {"n": i})
+    await a.publish("t.other", {"n": 99})
+    last3 = await b.recent("t.alert", 3)
+    assert [m.data["n"] for m in last3] == [2, 3, 4] and all(m.topic == "t.alert" for m in last3)
+    assert [m.data["n"] for m in await b.recent("t.alert", 100)] == [0, 1, 2, 3, 4]
+    assert await b.recent("t.none", 10) == [] and await b.recent("t.alert", 0) == []
+    await b.ensure_group("g", ["t.alert"], start="earliest")  # peeking never moved a cursor
+    assert len(await b.consume("g", ["t.alert"], block_s=0.5)) == 5

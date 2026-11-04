@@ -83,6 +83,11 @@ class Bus(ABC):
     @abstractmethod
     async def ack(self, group: str, msgs: list[Message]) -> None: ...
 
+    @abstractmethod
+    async def recent(self, topic: str, limit: int = 100) -> list[Message]:
+        """The newest retained messages on ``topic``, oldest first. A read-only peek: no consumer group,
+        no cursor (dashboards use it to show recent alerts)."""
+
     # ---- key-value --------------------------------------------------------------------------------
     @abstractmethod
     async def kv_set(self, key: str, value: Any, ttl: float | None = None) -> None: ...
@@ -193,6 +198,9 @@ class MemoryBus(Bus):
     async def ack(self, group: str, msgs: list[Message]) -> None:
         if msgs:
             self.state.cursors[group] = max(self.state.cursors.get(group, 0), max(int(m.id) for m in msgs))
+
+    async def recent(self, topic: str, limit: int = 100) -> list[Message]:
+        return [m for m in self.state.messages if m.topic == topic][-limit:] if limit > 0 else []
 
     async def kv_set(self, key: str, value: Any, ttl: float | None = None) -> None:
         self.state.kv[key] = (orjson.loads(_dumps(value)), time.time() + ttl if ttl else None)
@@ -339,6 +347,14 @@ class SqliteBus(Bus):
         await self._run(self._write, "INSERT INTO cursors(grp, last_id) VALUES (?,?) "
                         "ON CONFLICT(grp) DO UPDATE SET last_id=MAX(last_id, excluded.last_id)", (group, last))
 
+    def _recent(self, topic: str, limit: int) -> list[tuple]:
+        return self.c.execute("SELECT id, topic, ts, source, data FROM messages WHERE topic = ? ORDER BY id DESC "
+                              "LIMIT ?", (topic, limit)).fetchall()
+
+    async def recent(self, topic: str, limit: int = 100) -> list[Message]:
+        rows = await self._run(self._recent, topic, max(0, int(limit)))
+        return [Message(str(r[0]), r[1], r[2], r[3], orjson.loads(r[4])) for r in reversed(rows)]
+
     async def kv_set(self, key: str, value: Any, ttl: float | None = None) -> None:
         await self._run(self._write, "INSERT OR REPLACE INTO kv(key, value, expires) VALUES (?,?,?)",
                         (key, _dumps(value), time.time() + ttl if ttl else None))
@@ -469,6 +485,17 @@ class RedisBus(Bus):
             by_topic.setdefault(m.topic, []).append(m.id)
         for t, ids in by_topic.items():
             await self.r.xack(self._s(t), group, *ids)
+
+    async def recent(self, topic: str, limit: int = 100) -> list[Message]:
+        if limit <= 0:
+            return []
+        entries = await self.r.xrevrange(self._s(topic), "+", "-", count=int(limit))
+        out = []
+        for rid, fields in reversed(entries or []):
+            f = {(k.decode() if isinstance(k, bytes) else k): v for k, v in fields.items()}
+            out.append(Message(rid.decode() if isinstance(rid, bytes) else rid, topic, float(f["ts"]),
+                               f["src"].decode() if isinstance(f["src"], bytes) else f["src"], orjson.loads(f["d"])))
+        return out
 
     async def kv_set(self, key: str, value: Any, ttl: float | None = None) -> None:
         await self.r.set(f"{self.PREFIX}kv:{key}", _dumps(value), px=int(ttl * 1000) if ttl else None)
