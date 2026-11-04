@@ -118,6 +118,7 @@ def seed(base: Path, today: date) -> None:
     st.append("ai_costs", [{"ts": time.time(), "model": "claude-opus-5-5", "purpose": "report:midday",
                             "input_tokens": 9000, "output_tokens": 4000, "cache_read_tokens": 2000,
                             "cache_write_tokens": 0, "usd": 0.1164, "inr": 9.89}], today)
+    seed_journal(st, today, days)
 
     async def kv() -> None:
         bus = make_bus("sqlite", "seed", data_dir=base / "data")
@@ -152,6 +153,33 @@ def seed(base: Path, today: date) -> None:
         await bus.close()
 
     asyncio.run(kv())
+
+
+def seed_journal(st: TableStore, today: date, days: list[date]) -> None:
+    """A fortnight of round trips (engine and manual, wins and losses) through the real journal analytics."""
+    from dhanbot.clock import epoch_at
+
+    from tradingbots.bots.journal import analytics as JA
+
+    fills, n = [], 0
+    for i, d in enumerate(days[-9:] + [today]):
+        for j, (sym, hh, move) in enumerate([("RELIANCE", "09:25", 6.0), ("INFY", "11:10", -4.0),
+                                              ("HDFCBANK", "14:20", 3.0)]):
+            if (i + j) % 4 == 3:
+                continue
+            n += 2
+            src = "bot" if j != 1 else "manual"
+            m = move * (1 if (i + j) % 3 else -1)
+            t0 = epoch_at(d, hh)
+            fills += [JA.Fill("real", "simulated", sym, "INTRADAY", f"T{n}", t0, 1, 10, 1500.0, 6.0, src, "NSE_EQ",
+                              "entry" if src == "bot" else "", 1499.6 if src == "bot" else None),
+                      JA.Fill("real", "simulated", sym, "INTRADAY", f"T{n + 1}", t0 + 1500 + 300 * j, -1, 10, 1500.0 + m,
+                              6.5, src, "NSE_EQ", ("target" if m > 0 else "sl") if src == "bot" else "", None)]
+    trips = JA.round_trips(fills)
+    trips[-1]["tags"], trips[-1]["note"] = "breakout", "entered on the 15-minute high"
+    st.replace("perf_trades", trips)
+    st.replace("perf_summary", JA.summary_rows(trips, today))
+    st.replace("perf_breakdown", JA.breakdown_rows(trips, today))
 
 
 class FakeBots:
@@ -215,6 +243,7 @@ def replies(today: str) -> dict[str, dict]:
                                          "restart_required": False, "errors": []},
         topics.cmd("execution", "control"): {"ok": True, "done": True, "result": {"state": "PAUSED"}},
         topics.cmd("history", "refresh"): {"ok": True, "refreshed": 3},
+        topics.cmd("journal", "annotate"): {"ok": True, "saved": True, "count": 1},
         topics.cmd("notifier", "status"): {"ok": True, "telegram": "on", "email": "off", "problems": [
             "email: set SMTP_HOST, SMTP_USER, SMTP_PASSWORD and EMAIL_TO in .env (see .env.example)"],
             "why": {"email": "email: set SMTP_HOST, SMTP_USER, SMTP_PASSWORD and EMAIL_TO in .env (see .env.example)"},

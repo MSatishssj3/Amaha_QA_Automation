@@ -288,6 +288,13 @@ class NotifierBot(Bot):
                                          f"{plural(u['total']['entries'], 'entry', 'entries')}, "
                                          f"{u.get('budget_rejects', 0)} blocked, your own trades "
                                          f"{inr(ext.get('turnover_inr'))}"))
+        jr = next((m.data for m in reversed(await self.bus.recent(topics.JOURNAL_UPDATED, 5)) if m.data.get("day") == d),
+                  None)
+        js = (jr or {}).get("today") or {}
+        if js.get("trades"):
+            rows.append(("Closed trades", f"{js['trades']} (engine + yours), {js['wins']} won ({js['win_rate']:.0f}%), "
+                                          f"net {arrow(js['net_pnl'])} {inr(js['net_pnl'], signed=True)}, "
+                                          f"expectancy {inr(js['expectancy'], signed=True)} per trade"))
         if ms:
             rows.append(("Money", f"net worth {inr(ms.get('net_worth'), compact=True)}, realised today "
                                   f"{inr(ms.get('realized_pnl_today'), signed=True)}, charges this month "

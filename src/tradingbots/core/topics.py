@@ -22,6 +22,7 @@ ACCOUNT_TOPICS = (ACCOUNT_POSITIONS, ACCOUNT_HOLDINGS, ACCOUNT_FUNDS, ACCOUNT_OR
 TABLES_UPDATED = "tables.updated"  # {table, rows, partitions}
 HISTORY_UPDATED = "history.updated"  # {symbols, as_of}
 MONEY_UPDATED = "money.updated"  # {as_of, summary}
+JOURNAL_UPDATED = "journal.updated"  # {as_of, day, today, month, all, open, unmatched} (stats of real trades)
 
 BUDGET_POLICY = "budget.policy"  # BudgetPolicyMsg
 BUDGET_USAGE = "budget.usage"  # BudgetUsageMsg

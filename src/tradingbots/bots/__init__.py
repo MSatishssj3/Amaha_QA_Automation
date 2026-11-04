@@ -11,6 +11,7 @@ _REGISTRY = {
     "tables": "tradingbots.bots.tables.bot:TablesBot",
     "history": "tradingbots.bots.history.bot:HistoryBot",
     "money": "tradingbots.bots.money.bot:MoneyBot",
+    "journal": "tradingbots.bots.journal.bot:JournalBot",
     "budget": "tradingbots.bots.budget.bot:BudgetBot",
     "ai_analyst": "tradingbots.bots.ai_analyst.bot:AIAnalystBot",
     "execution": "tradingbots.bots.execution.bot:ExecutionBot",

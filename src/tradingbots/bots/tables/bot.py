@@ -69,13 +69,13 @@ class TablesBot(Bot):
         self.store = TableStore(self.ctx.paths.tables)
         self.reader = TableReader(self.ctx.paths.tables)
         today = self.ctx.today()
-        try:  # resume today's execution-order state and remember which broker orders are ours
+        try:  # resume recent execution-order state and remember which broker orders are ours
             df = self.reader.query("SELECT * FROM exec_orders WHERE date >= ?", [today - timedelta(days=60)])
             for r in df.to_dicts():
                 if r.get("broker_id"):
                     self.bot_order_ids.add(r["broker_id"])
-                if r.get("date") == today:
-                    r.pop("date", None)
+                d = r.pop("date", None)
+                if d is not None and d >= today - timedelta(days=1):
                     self.exec_orders[r["cid"]] = r
         except Exception as e:
             self.log.warning("could not reload exec_orders: %s", e)
@@ -193,14 +193,24 @@ class TablesBot(Bot):
             await self._updated(table, len(rows), [day.isoformat()])
 
     # ---- execution ---------------------------------------------------------------------------------------
+    def _order_day(self, o: dict) -> date:
+        """An engine order belongs to the IST day it was placed (its partition never changes)."""
+        return ist_datetime(float(o.get("placed_ts") or o.get("updated_ts") or self.clock.time())).date()
+
     async def on_exec_order(self, msg: Message) -> None:
         o = dict(msg.data)
         if o.get("broker_id"):
             self.bot_order_ids.add(o["broker_id"])
         if not o.get("cid"):
             return
+        o.pop("event", None)
         self.exec_orders[o["cid"]] = o
-        await self._replace("exec_orders", list(self.exec_orders.values()), self._today())
+        day = self._order_day(o)
+        keep = day - timedelta(days=1)  # a long-running team: memory holds yesterday and today only
+        for cid in [c for c, r in self.exec_orders.items() if self._order_day(r) < keep]:
+            del self.exec_orders[cid]
+        await self._replace("exec_orders", [dict(r) for r in self.exec_orders.values() if self._order_day(r) == day],
+                            day)
 
     async def on_exec_fill(self, msg: Message) -> None:
         f = dict(msg.data)

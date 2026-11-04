@@ -343,3 +343,67 @@ def test_order_events_publish_leg_changes_only_and_keep_the_placed_time(tmp_path
         sent.append(data)
     assert [d["event"] for d in sent] == ["ack", "leg_update", "leg_update"]  # 2 real leg changes, not 6
     assert len({d["placed_ts"] for d in sent}) == 1 and sent[-1]["updated_ts"] - sent[0]["placed_ts"] == 120
+
+
+def test_order_and_fill_events_carry_the_slippage_reference_mode_and_estimated_charges(tmp_path):
+    from types import SimpleNamespace
+
+    from dhanbot.models import OrderType
+
+    from tradingbots.bots.execution.bot import ExecutionBot
+
+    from .helpers import make_ctx
+
+    bot = ExecutionBot(make_ctx(tmp_path))
+    bot.exec_mode, bot.platform_name = "paper", "dhan"
+    bot.engine = SimpleNamespace(  # just what the event code reads: the last price and the charges model
+        market=SimpleNamespace(of=lambda inst: SimpleNamespace(ltp=1449.5)),
+        positions=SimpleNamespace(estimate_charges=lambda q, p, inst, first: q * p * 0.001 + (2000.0 if first else 0.0)))
+    mkt = Order(1, REL, Side.BUY, 4, order_type=OrderType.MARKET, cid="DB-1", broker_id="P-1")
+    lim = Order(2, REL, Side.BUY, 1, order_type=OrderType.LIMIT, price_paise=144800, cid="DB-2")
+    stp = Order(3, REL, Side.SELL, 4, order_type=OrderType.STOP_LOSS_MARKET, trigger_paise=144000, role="sl", cid="DB-3")
+    for o in (mkt, lim, stp):
+        bot._on_order_event(OrderEvent("ack", o))
+    bot.engine.market = SimpleNamespace(of=lambda inst: SimpleNamespace(ltp=1500.0))  # later prices never move the ref
+    for qty in (3, 1):
+        f = Fill(1, REL, Product.INTRADAY, Side.BUY, qty, 145000, "", 1.0)
+        bot._on_order_event(OrderEvent("fill", mkt, fill=f))
+    sent = []
+    while not bot._events.empty():
+        sent.append(bot._events.get_nowait())
+    orders = {d["cid"]: d for t, d in sent if t == topics.EXEC_ORDER}
+    assert orders["DB-1"]["ref_price"] == 1449.5 and orders["DB-1"]["order_type"] == "MARKET"
+    assert orders["DB-2"]["ref_price"] == 1448.0 and orders["DB-3"]["ref_price"] == 1440.0
+    assert orders["DB-1"]["mode"] == "paper" and orders["DB-1"]["product"] == "INTRADAY"
+    fills = [d for t, d in sent if t == topics.EXEC_FILL]
+    assert [f["est_charges"] for f in fills] == [24.35, 1.45]  # brokerage once per order, then statutory only
+    assert fills[0]["mode"] == "paper" and fills[0]["product"] == "INTRADAY" and fills[0]["platform"] == "dhan"
+
+
+async def test_engine_orders_stay_in_the_partition_of_the_day_they_were_placed(tmp_path):
+    from datetime import timedelta
+
+    from tradingbots.core.tables_io import TableReader
+
+    team = Team(tmp_path, ["tables"])
+    async with team:
+        d2 = ist_datetime(team.clock.time()).date()
+        d1 = d2 - timedelta(days=1)
+        base = {"symbol": "RELIANCE", "segment": "NSE_EQ", "side": "BUY", "qty": 1, "status": "FILLED"}
+        await team.client.publish(topics.EXEC_ORDER, {**base, "cid": "A", "placed_ts": epoch_at(d1, "10:00"),
+                                                      "updated_ts": epoch_at(d1, "10:00")})
+        await team.client.publish(topics.EXEC_ORDER, {**base, "cid": "B", "placed_ts": epoch_at(d2, "10:00"),
+                                                      "updated_ts": epoch_at(d2, "10:00")})
+        await team.client.publish(topics.EXEC_ORDER, {**base, "cid": "A", "status": "CANCELLED",
+                                                      "placed_ts": epoch_at(d1, "10:00"),
+                                                      "updated_ts": epoch_at(d2, "09:16")})  # yesterday's order, updated
+        reader = TableReader(team.paths.tables)
+
+        def rows():
+            try:
+                return sorted((str(r["date"]), r["cid"], r["status"]) for r in reader.table("exec_orders").to_dicts())
+            except Exception:
+                return []
+
+        want = [(str(d1), "A", "CANCELLED"), (str(d2), "B", "FILLED")]
+        assert await wait_for(lambda: rows() == want, 10), rows()

@@ -40,7 +40,7 @@ def tokens() -> dict[str, Any]:
 
 
 # ---- numbers: shared with the bots (core/fmt.py) -------------------------------------------------
-from ..core.fmt import _indian_group, arrow, inr, pct, plural, usd  # noqa: E402,F401
+from ..core.fmt import _indian_group, arrow, duration, inr, pct, plural, usd  # noqa: E402,F401
 
 
 # ---- chart chrome -----------------------------------------------------------------------------------------------

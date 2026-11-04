@@ -35,8 +35,8 @@ class TableDef:
         return pl.DataFrame(schema=cols)
 
 
-def _t(name, owner, description, partition=None, mode="replace", **cols) -> TableDef:
-    return TableDef(name, owner, description, cols, partition, mode)
+def _t(name, owner, description, partition=None, writes="replace", **cols) -> TableDef:
+    return TableDef(name, owner, description, cols, partition, writes)
 
 
 TABLES: dict[str, TableDef] = {t.name: t for t in [
@@ -71,13 +71,21 @@ TABLES: dict[str, TableDef] = {t.name: t for t in [
     _t("ledger", "tables", "Account ledger vouchers (funds in/out, charges, settlements)", "date", "replace",
        platform=(S, ""), narration=(S, ""), voucher_desc=(S, ""), voucher_no=(S, ""), debit=(F, ""), credit=(F, ""),
        running_balance=(F, ""), category=(S, "deposit / withdrawal / charges / settlement / trade / other")),
-    _t("exec_orders", "tables", "Orders placed by the execution bot (dhan_bot engine)", "date", "replace",
+    _t("exec_orders", "tables", "Orders placed by the execution bot (dhan_bot engine), by the day they were placed",
+       "date", "replace",
        cid=(S, "correlation id"), broker_id=(S, ""), symbol=(S, ""), segment=(S, ""), side=(S, ""), qty=(I, ""),
-       price=(F, ""), status=(S, ""), intent=(S, "ENTRY / EXIT"), role=(S, ""), filled_qty=(I, ""),
-       avg_price=(F, ""), reason=(S, ""), updated_ts=(F, "last change"), placed_ts=(F, "when it was placed")),
+       price=(F, ""), status=(S, ""), intent=(S, "ENTRY / EXIT"), role=(S, "entry / exit / sl / target / squareoff / "
+                                                                         "flatten"), filled_qty=(I, ""),
+       avg_price=(F, ""), reason=(S, ""), updated_ts=(F, "last change"), placed_ts=(F, "when it was placed"),
+       ref_price=(F, "slippage reference: stop trigger, limit price, or last traded price when a market order was "
+                     "placed"),
+       order_type=(S, "LIMIT / MARKET / STOP_LOSS / STOP_LOSS_MARKET"), product=(S, "INTRADAY / CNC / MARGIN"),
+       mode=(S, "paper / live / simulated-exchange"), platform=(S, "")),
     _t("exec_fills", "tables", "Fills of execution-bot orders", "date", "append",
        cid=(S, ""), broker_id=(S, ""), symbol=(S, ""), segment=(S, ""), side=(S, ""), qty=(I, ""), price=(F, ""),
-       intent=(S, ""), ts=(F, "")),
+       intent=(S, ""), ts=(F, ""), role=(S, "the order's role"), leg=(S, "super-order leg"), product=(S, ""),
+       mode=(S, "paper / live / simulated-exchange"), est_charges=(F, "the engine's estimate of this fill's charges"),
+       platform=(S, "")),
     _t("candles_daily", "tables", "Daily OHLCV history per symbol", "symbol", "replace",
        segment=(S, ""), security_id=(I, ""), day=(pl.Date, "IST trading date"), open=(F, ""), high=(F, ""),
        low=(F, ""), close=(F, ""), volume=(I, "")),
@@ -114,6 +122,35 @@ TABLES: dict[str, TableDef] = {t.name: t for t in [
        auto=(B, "added automatically (e.g. AI API cost)")),
     _t("money_summary", "money", "Headline money numbers",
        metric=(S, ""), value=(F, ""), unit=(S, "INR / % / count"), note=(S, "")),
+    # ---- journal ----------------------------------------------------------------------------------------
+    _t("perf_trades", "journal", "Every round trip (flat to flat) of your trades, with charges, slippage, tags and notes",
+       trade_key=(S, "stable id: book:platform:symbol:product:first fill"), book=(S, "real / paper"), platform=(S, ""),
+       symbol=(S, ""), segment=(S, ""), product=(S, ""), direction=(S, "long / short"),
+       status=(S, "closed / open / unmatched"), source=(S, "bot / manual / mixed / paper"),
+       entry_ts=(F, "first entry fill"), entry_day=(pl.Date, ""), exit_ts=(F, "the fill that closed it"),
+       exit_day=(pl.Date, "the day the trade counts on"),
+       qty=(I, "quantity bought (long) or sold (short) on the way in"), max_qty=(I, "largest position held"),
+       open_qty=(I, "still open (open trades only)"), avg_entry=(F, ""), avg_exit=(F, ""),
+       gross=(F, "P&L from prices only"), charges=(F, "actual charges (paper: the engine's estimate)"),
+       net=(F, "gross - charges"), return_pct=(F, "net / entry value, %"), holding_s=(F, "seconds held"),
+       slippage=(F, "engine trades: cost against the order's reference price (+ = worse)"),
+       exit_reason=(S, "target / stop-loss / square-off / strategy exit / manual ..."), fills=(I, "fills in the trade"),
+       remark=(S, "how the journal treated it, when unusual"), tags=(S, "your tags, comma separated"),
+       note=(S, "your note")),
+    _t("perf_summary", "journal", "Trading statistics by period and source (closed trades, net of charges)",
+       scope=(S, "today / month / fy / all"), source=(S, "real (engine + manual) / bot / manual / paper"),
+       trades=(I, "closed trades"), wins=(I, "net > 0"), losses=(I, "net < 0"), win_rate=(F, "%"), net_pnl=(F, ""),
+       gross_pnl=(F, ""), charges=(F, ""), avg_win=(F, ""), avg_loss=(F, "negative"),
+       payoff=(F, "average win / average loss"), expectancy=(F, "average net per trade"),
+       profit_factor=(F, "gross wins / gross losses (empty: no losing trade)"),
+       max_drawdown=(F, "largest fall of the cumulative net P&L"), losing_streak=(I, "longest run of losing trades"),
+       winning_streak=(I, ""), avg_hold_s=(F, "average seconds held"), slippage=(F, "engine trades"),
+       charges_pct_of_gross=(F, "charges / gross P&L, %"), best=(F, "best trade"), worst=(F, "worst trade")),
+    _t("perf_breakdown", "journal", "Closed trades grouped by hour, weekday, symbol, holding time, direction, source, "
+                                    "exit and tag",
+       scope=(S, "month / fy / all"), source=(S, "real / paper"), dimension=(S, ""), bucket=(S, ""),
+       sort=(I, "display order"), trades=(I, ""), wins=(I, ""), win_rate=(F, "%"), net_pnl=(F, ""), avg_net=(F, ""),
+       charges=(F, "")),
     # ---- ai-analyst --------------------------------------------------------------------------------------
     _t("ai_costs", "ai_analyst", "Every Claude API call: tokens and cost", "date", "append",
        ts=(F, ""), model=(S, ""), purpose=(S, ""), input_tokens=(I, ""), output_tokens=(I, ""),

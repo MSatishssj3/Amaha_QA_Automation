@@ -392,3 +392,27 @@ def test_packet_from_real_table_types_is_json_safe(tmp_path):
     held = {x["symbol"]: x.get("position") for x in packet["stocks"]}
     assert held["INFY"]["qty"] == 10.0 and held["TCS"]["pnl_pct"] == pytest.approx(2.12, abs=0.01)  # held, not watched
     assert "TCS: no daily history yet" in notes and "<packet>" in user_message("midday", packet)
+
+
+def test_packet_carries_the_trade_journal(tmp_path):
+    from datetime import date
+
+    from dhanbot.clock import epoch_at
+
+    from tradingbots.bots.ai_analyst.packet import build_packet
+    from tradingbots.bots.journal import analytics as JA
+
+    store = TableStore(tmp_path / "data" / "tables")
+    reader = TableReader(tmp_path / "data" / "tables")
+    s = make_settings(tmp_path)
+    assert build_packet(reader, s, "midday", 1_793_000_000.0, None)[0]["portfolio"]["trading"] == {}  # no trades yet
+    d = date(2026, 11, 5)
+    fills = [JA.Fill("real", "dhan", "INFY", "INTRADAY", "1", epoch_at(d, "09:30"), 1, 10, 100.0, 2.0),
+             JA.Fill("real", "dhan", "INFY", "INTRADAY", "2", epoch_at(d, "10:00"), -1, 10, 103.0, 2.0)]
+    trips = JA.round_trips(fills)
+    store.replace("perf_summary", JA.summary_rows(trips, d))
+    store.replace("perf_breakdown", JA.breakdown_rows(trips, d))
+    trading = build_packet(reader, s, "midday", 1_793_000_000.0, None)[0]["portfolio"]["trading"]
+    assert trading["all_time"]["trades"] == 1 and trading["all_time"]["net_pnl"] == 26.0
+    assert trading["this_month"]["win_rate"] == 100.0 and trading["by_entry_hour"][0]["hour"] == "09:00"
+    assert "portfolio.trading" in SYSTEM_PROMPT
