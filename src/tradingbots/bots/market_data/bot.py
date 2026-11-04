@@ -18,6 +18,7 @@ from typing import Any
 
 from dhanbot.bars import BarAggregator, parse_timeframe
 from dhanbot.clock import ist_datetime
+from dhanbot.recorder import TickRecorder
 from dhanbot.models import Instrument
 
 from ...core import topics
@@ -50,6 +51,8 @@ class MarketDataBot(Bot):
         self._token_version = 0
         self.problems: list[str] = []
         self.snapshots = 0
+        self.recorder: TickRecorder | None = None
+        self._rec_day = ""
         self._last_ledger = 0.0
         self._lock = asyncio.Lock()
 
@@ -102,7 +105,8 @@ class MarketDataBot(Bot):
                 for tf in tfs:
                     self.bars.add(inst.key, inst.trading_symbol, tf)
             self.quotes = {}
-            self.stream = self.platform.stream(self.instruments, self._on_tick, self._on_prev_close, self._on_feed_event)
+            self.stream = self.platform.stream(self.instruments, self._on_tick, self._on_prev_close, self._on_feed_event,
+                                               on_raw=self._on_raw)
             self._loops = [asyncio.create_task(self.stream.run(), name="md-feed"),
                            asyncio.create_task(self._publisher(), name="md-publisher"),
                            asyncio.create_task(self._snapshots(), name="md-snapshots")]
@@ -111,6 +115,7 @@ class MarketDataBot(Bot):
     async def _disconnect(self) -> None:
         if self.stream is not None:
             await self.stream.stop()
+        await self._close_recorder()
         for t in self._loops:
             t.cancel()
         await asyncio.gather(*self._loops, return_exceptions=True)
@@ -138,6 +143,29 @@ class MarketDataBot(Bot):
             self.platform.set_token(info["token"])
             if self.stream is not None:
                 await self.stream.recycle()
+
+    # ---- raw recording (market_data.record_raw) --------------------------------------------------------------
+    def _on_raw(self, frame: bytes) -> None:
+        """Every raw frame goes to data/ticks/<IST day>.bin (dhanbot's replay format), stamped with the team's
+        clock so a recorded demo day replays on its own timeline. Follows the setting live, no reconnect needed."""
+        if not self.settings.market_data.record_raw:
+            if self.recorder is not None:
+                self.spawn(self._close_recorder(), name="rec-close")
+            return
+        now = self.clock.time()
+        day = ist_datetime(now).date().isoformat()
+        if self.recorder is None or day != self._rec_day:
+            old, self._rec_day = self.recorder, day
+            self.recorder = TickRecorder(self.ctx.paths.data / "ticks" / f"{day}.bin")
+            self.recorder.start()
+            if old is not None:
+                self.spawn(old.close(), name="rec-rotate")
+        self.recorder.add(frame, int(now * 1e9))
+
+    async def _close_recorder(self) -> None:
+        rec, self.recorder = self.recorder, None
+        if rec is not None:
+            await rec.close()
 
     # ---- hot path: ticks -------------------------------------------------------------------------------
     def _on_prev_close(self, inst: Instrument, prev_close: float) -> None:

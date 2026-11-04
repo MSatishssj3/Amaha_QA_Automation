@@ -123,3 +123,27 @@ async def test_config_bot_dhan_platform_without_credentials_alerts(tmp_path):
     async with team:
         st = await team.client.request(topics.cmd("config", "token_status"), {})
         assert st["platform"] == "dhan" and "no valid Dhan access token" in st["error"] or st["error"]
+
+
+async def test_market_data_records_raw_frames_for_replay(tmp_path):
+    from dhanbot.dhan.packets import Tick, parse_frame
+    from dhanbot.recorder import iter_frames
+
+    s = make_settings(tmp_path, platform={"name": "simulated"}, market_data={"record_raw": True})
+    team = Team(tmp_path, ["sim_market", "config", "market_data"], settings=s, speed=30)
+    async with team:
+        md = team.bots["market_data"]
+        assert await wait_for(lambda: md.recorder is not None and md.recorder.frames > 20, 40)
+        day = md._rec_day
+        await md.recorder.flush()
+        # switching the setting off stops recording without a reconnect
+        up = await team.client.request(topics.cmd("config", "update"), {"patch": {"market_data": {"record_raw": False}}})
+        assert up["applied"]
+        assert await wait_for(lambda: md.recorder is None, 20)
+    path = tmp_path / "data" / "ticks" / f"{day}.bin"
+    frames = list(iter_frames(path))
+    assert len(frames) > 20
+    ticks = [p for _, f in frames for p in parse_frame(f) if isinstance(p, Tick)]
+    assert ticks, "recorded frames parse back into ticks"
+    stamps = [ns for ns, _ in frames]
+    assert stamps == sorted(stamps) and abs(stamps[-1] / 1e9 - team.clock.time()) < 3600  # team clock, not wall

@@ -75,7 +75,9 @@ class Platform(ABC):
 
     @abstractmethod
     def stream(self, instruments: list[tuple[WatchItem, Instrument]], on_tick: TickCallback,
-               on_prev_close: PrevCloseCallback, on_event: EventCallback) -> Stream: ...
+               on_prev_close: PrevCloseCallback, on_event: EventCallback, *,
+               on_raw: Callable[[bytes], None] | None = None) -> Stream:
+        """``on_raw`` (optional) receives every raw feed frame before parsing, e.g. to record it for replay."""
 
     @abstractmethod
     async def positions(self) -> list[dict]: ...
