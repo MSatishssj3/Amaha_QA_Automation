@@ -74,7 +74,7 @@ TABLES: dict[str, TableDef] = {t.name: t for t in [
     _t("exec_orders", "tables", "Orders placed by the execution bot (dhan_bot engine)", "date", "replace",
        cid=(S, "correlation id"), broker_id=(S, ""), symbol=(S, ""), segment=(S, ""), side=(S, ""), qty=(I, ""),
        price=(F, ""), status=(S, ""), intent=(S, "ENTRY / EXIT"), role=(S, ""), filled_qty=(I, ""),
-       avg_price=(F, ""), reason=(S, ""), updated_ts=(F, "")),
+       avg_price=(F, ""), reason=(S, ""), updated_ts=(F, "last change"), placed_ts=(F, "when it was placed")),
     _t("exec_fills", "tables", "Fills of execution-bot orders", "date", "append",
        cid=(S, ""), broker_id=(S, ""), symbol=(S, ""), segment=(S, ""), side=(S, ""), qty=(I, ""), price=(F, ""),
        intent=(S, ""), ts=(F, "")),

@@ -69,14 +69,18 @@ class Bot:
         self._commands[topics.cmd(self.name, action)] = fn
 
     def every(self, seconds: float, fn: Callable[[], Awaitable[Any]], *, name: str, run_at_start: bool = False,
-              session_only: bool = False) -> None:
+              session_only: bool = False, wall_clock: bool = False) -> None:
+        """Run ``fn`` every ``seconds`` of the team's clock, or of real time with ``wall_clock`` (for refreshes and
+        flushes that only matter to people and disks, so an accelerated demo does not run them 60x as often)."""
+        sleep = asyncio.sleep if wall_clock else self.clock.sleep
+
         async def loop() -> None:
             if not run_at_start:
-                await self.clock.sleep(seconds)
+                await sleep(seconds)
             while not self._stop.is_set():
                 if not session_only or self.ctx.calendar.in_session(self.clock.time()):
                     await self._run_job(name, fn)
-                await self.clock.sleep(seconds)
+                await sleep(seconds)
 
         self._jobs.append((name, loop))
 

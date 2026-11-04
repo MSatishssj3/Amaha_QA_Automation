@@ -122,6 +122,20 @@ def build_request(cfg: AICfg, user_text: str, schema: type[BaseModel], max_token
     }
 
 
+class Pong(BaseModel):
+    reply: str
+
+
+def ping_request(cfg: AICfg) -> dict:
+    """The smallest useful call (a fraction of a cent): checks the key, the model name and structured output."""
+    return {"model": cfg.model, "max_tokens": 1024,
+            "system": [{"type": "text", "text": "You check that an API connection works."}],
+            "messages": [{"role": "user", "content": "Reply with the single word OK."}],
+            "thinking": {"type": "adaptive"},
+            "output_config": {"effort": "low", "format": {"type": "json_schema",
+                                                          "schema": anthropic.transform_schema(Pong)}}}
+
+
 class Claude:
     def __init__(self, client: Any, cfg: AICfg) -> None:
         self.client = client  # anthropic.AsyncAnthropic (tests pass a fake with the same surface)

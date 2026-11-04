@@ -23,7 +23,7 @@ from .bots import BOT_NAMES, bot_class
 from .core.bus import make_bus
 from .core.runtime import BotContext, MarketCalendar, Paths, SharedSimClock, setup_logging, shutdown_logging
 from .core.secrets import SECRET_KEYS, load_env
-from .core.settings import Settings, SettingsError, load_settings_file
+from .core.settings import Settings, SettingsError, bus_location, load_settings_file
 
 
 @dataclass
@@ -48,7 +48,8 @@ def build_context(name: str, base_dir: Path, sim: SimArgs | None = None, setting
     paths = Paths(base, bootstrap)
     clock = SharedSimClock(sim.start, sim.speed, sim.wall_ref) if sim else RealClock()
     calendar = MarketCalendar.from_file(paths.holidays_file) if paths.holidays_file.exists() else MarketCalendar()
-    bus = make_bus(bootstrap.system.bus_backend, name, data_dir=paths.data, redis_url=bootstrap.system.redis_url)
+    backend, redis_url = bus_location(bootstrap)
+    bus = make_bus(backend, name, data_dir=paths.data, redis_url=redis_url)
     return BotContext(bus=bus, paths=paths, clock=clock, bootstrap=bootstrap, calendar=calendar,
                       sim={"port": sim.port} if sim and sim.port else None)
 

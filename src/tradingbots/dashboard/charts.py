@@ -86,11 +86,8 @@ def price_chart(c: pl.DataFrame, symbol: str, t: dict[str, Any], holidays: Itera
     fig.add_trace(go.Bar(x=x, y=c["volume"], name="Volume", marker=dict(color=t["volume"]),
                          hovertemplate="%{y:,.0f}"), row=2, col=1)
     T.style(fig, t, height=height, legend=True, hover="x unified", margin=dict(l=8, r=64, t=28, b=8))
-    breaks = [dict(bounds=["sat", "mon"])]
-    hol = [d.isoformat() for d in holidays]
-    if hol:
-        breaks.append(dict(values=hol))
-    fig.update_xaxes(rangeslider_visible=False, rangebreaks=breaks)
+    # weekends are hidden; holidays are not (a hidden date that has data would break the average lines)
+    fig.update_xaxes(rangeslider_visible=False, rangebreaks=[dict(bounds=["sat", "mon"])])
     fig.update_yaxes(tickformat=",.0f", row=1, col=1)
     fig.update_yaxes(showgrid=False, tickformat="~s", row=2, col=1)
     return fig
@@ -200,6 +197,7 @@ def columns(x: list, y: list[float], t: dict[str, Any], *, money: bool = True, h
                            yanchor="bottom", font=dict(color=t["ink2"], size=11))
     T.style(fig, t, height=height, margin=dict(l=8, r=8, t=16, b=8))
     fig.update_layout(bargap=T.thin_bargap(len(x), 600))
+    fig.update_xaxes(type="category")  # one bar per label; never a stretched date axis
     if money:
         inr_axis(fig, ys)
     return fig
@@ -216,5 +214,6 @@ def diverging_bars(x: list, y: list[float], t: dict[str, Any], height: int = 260
     fig.add_hline(y=0, line=dict(color=t["axis"], width=1))
     T.style(fig, t, height=height, margin=dict(l=8, r=8, t=16, b=8))
     fig.update_layout(bargap=T.thin_bargap(len(x), 600))
+    fig.update_xaxes(type="category")
     inr_axis(fig, ys)
     return fig

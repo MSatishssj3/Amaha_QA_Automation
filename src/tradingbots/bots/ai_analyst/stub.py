@@ -61,8 +61,8 @@ def stub_report(packet: dict) -> Report:
                    else "no daily budget status")
     ups = sum(v.trend in ("up", "strong_up") for v in views)
     headline = f"[Demo stub - no AI] {ups} of {len(views)} stocks in an uptrend"
-    md = "\n".join([f"**{headline}**", ""] + [f"- **{v.symbol}**: {v.trend.replace('_', ' ')} - {v.watch_action.replace('_', ' ')}"
-                                             for v in views] + ["", f"*{STUB_NOTE} Not financial advice.*"])
+    bullets = [f"- **{v.symbol}**: {v.trend.replace('_', ' ')} - {v.watch_action.replace('_', ' ')}" for v in views]
+    md = "\n".join([f"**{headline}**", ""] + bullets + ["", f"*{STUB_NOTE} Not financial advice.*"])
     return Report(headline=headline,
                   market_context=(f"{m.get('benchmark')}: {m.get('change_pct', 0) or 0:+.2f}% today, trend "
                                   f"{m.get('trend', 'unknown')}" if m.get("benchmark") else "no benchmark data"),

@@ -27,6 +27,7 @@ from pathlib import Path
 from .core import topics
 from .core.bot import Bot
 from .core.bus import Message
+from .core.settings import dashboard_address
 from .runner import SimArgs
 
 KV_SUPERVISOR = "supervisor:status"
@@ -79,9 +80,9 @@ class SupervisorBot(Bot):
         if name == "dashboard":
             app = DASHBOARD_DIR / "app.py"
             d = self.settings.dashboard
-            return [self.python, "-m", "streamlit", "run", str(app), "--server.address", d.address,
-                    "--server.port", str(d.port), "--server.headless", "true", "--browser.gatherUsageStats", "false",
-                    "--", "--base", base]
+            return [self.python, "-m", "streamlit", "run", str(app),
+                    "--server.address", dashboard_address(self.settings), "--server.port", str(d.port),
+                    "--server.headless", "true", "--browser.gatherUsageStats", "false", "--", "--base", base]
         return [self.python, "-m", "tradingbots.runner", name, "--base", base, "--quiet"] + \
             (self.sim.argv() if self.sim else [])
 

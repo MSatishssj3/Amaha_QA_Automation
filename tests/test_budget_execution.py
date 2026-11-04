@@ -305,7 +305,8 @@ async def test_your_own_trades_shrink_the_budget(tmp_path):
 
 
 async def test_entries_blocked_until_the_budget_bot_publishes_a_policy(tmp_path):
-    team = Team(tmp_path, ["sim_market", "config", "execution"], settings=team_settings(tmp_path, daily_capital_limit_inr=50000),
+    team = Team(tmp_path, ["sim_market", "config", "execution"],
+                settings=team_settings(tmp_path, daily_capital_limit_inr=50000),
                 speed=30)
     async with team:
         assert await wait_for(lambda: probe(team) is not None and probe(team).denied, 60), team.bots["execution"].note
@@ -317,3 +318,28 @@ async def test_entries_blocked_until_the_budget_bot_publishes_a_policy(tmp_path)
         await team.start("budget")  # the gatekeeper comes up: limits known -> entries allowed
         assert await wait_for(lambda: probe(team).accepted >= 1 and probe(team).entry_fills >= 1, 60), \
             probe(team).denied[-3:]
+
+
+def test_order_events_publish_leg_changes_only_and_keep_the_placed_time(tmp_path):
+    from tradingbots.bots.execution.bot import ExecutionBot
+
+    from .helpers import make_ctx
+
+    clock = VirtualClock(epoch_at(ist_datetime(next_weekday_at("10:00")).date(), "10:00"))
+    bot = ExecutionBot(make_ctx(tmp_path, clock=clock))
+    o = Order(7, REL, Side.BUY, 5, price_paise=145000, cid="DB-7", broker_id="52001")
+    bot._on_order_event(OrderEvent("ack", o))
+    o.status, o.filled_qty = OrderStatus.FILLED, 5
+    clock.advance_to(clock.time() + 60)
+    o.meta["leg_status"] = {"TARGET_LEG": OrderStatus.OPEN, "STOP_LOSS_LEG": OrderStatus.OPEN}
+    for _ in range(5):  # the engine re-reports the same leg states on every reconcile
+        bot._on_order_event(OrderEvent("leg_update", o))
+    clock.advance_to(clock.time() + 60)
+    o.meta["leg_status"] = {"TARGET_LEG": OrderStatus.FILLED, "STOP_LOSS_LEG": OrderStatus.CANCELLED}
+    bot._on_order_event(OrderEvent("leg_update", o))
+    sent = []
+    while not bot._events.empty():
+        topic, data = bot._events.get_nowait()
+        sent.append(data)
+    assert [d["event"] for d in sent] == ["ack", "leg_update", "leg_update"]  # 2 real leg changes, not 6
+    assert len({d["placed_ts"] for d in sent}) == 1 and sent[-1]["updated_ts"] - sent[0]["placed_ts"] == 120

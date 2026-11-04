@@ -104,7 +104,7 @@ with tab_t:
         left = ts.get("seconds_left")
         shared = bool(info.get("updated") or info.get("version")) and not ts.get("error")
         st.metric(f"Token ({ts.get('platform')})", "shared with the bots" if shared else "missing",
-                  f"{left / 3600:.1f} h left" if left else None, delta_color="off")
+                  f"{left / 3600:.1f} h left" if left else None, delta_color="off", delta_arrow="off")
         if ts.get("error"):
             st.error(ts["error"])
     else:

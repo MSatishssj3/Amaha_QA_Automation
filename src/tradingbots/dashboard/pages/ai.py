@@ -22,12 +22,17 @@ else:
     elif mode == "stub":
         st.info("Demo mode: reports come from simple fixed rules, not from Claude (ai.provider = \"stub\").")
     k = st.columns(4)
-    k[0].metric("Model", st_.get("model") if mode == "anthropic" else mode, f"effort {st_.get('effort')}",
-                delta_color="off")
+    if mode == "anthropic":
+        k[0].metric("Model", st_.get("model"), f"effort {st_.get('effort')}", delta_color="off", delta_arrow="off")
+    else:
+        k[0].metric("Model", "demo stub" if mode == "stub" else "off",
+                    help="rule-based demo reports, no AI" if mode == "stub" else None)
     k[1].metric("Spent today", T.usd(st_.get("spent_today_usd")), f"of {T.usd(st_.get('budget_usd'))}",
-                delta_color="off")
-    k[2].metric("Scheduled runs (IST)", ", ".join(st_.get("schedule") or []) or "none")
-    k[3].metric("Refusal fallbacks", "on" if st_.get("refusal_fallbacks") else "off",
+                delta_color="off", delta_arrow="off")
+    runs = st_.get("schedule") or []
+    k[2].metric("Scheduled runs", T.plural(len(runs), "run") + " a day" if runs else "none",
+                ", ".join(runs) + " IST" if runs else None, delta_color="off", delta_arrow="off")
+    k[3].metric("Refusal fallbacks", ("on" if st_.get("refusal_fallbacks") else "off") if mode == "anthropic" else "-",
                 help="when Claude declines a request, the API retries it on the model Anthropic recommends")
     cap = st_.get("budget_usd") or 0
     if cap:

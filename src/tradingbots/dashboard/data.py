@@ -20,7 +20,7 @@ import polars as pl
 from ..core import topics
 from ..core.bus import BusTimeout, make_bus
 from ..core.runtime import Paths
-from ..core.settings import Settings, SettingsError, load_settings_file
+from ..core.settings import Settings, SettingsError, bus_location, load_settings_file
 from ..core.tables_io import TableReader
 
 
@@ -45,13 +45,13 @@ class TeamClient:
         self.reader = TableReader(self.paths.tables)
         self.loop = asyncio.new_event_loop()
         threading.Thread(target=self.loop.run_forever, name="dashboard-bus", daemon=True).start()
-        s = self.bootstrap.system
-        self.bus = make_bus(s.bus_backend, "dashboard", data_dir=self.paths.data, redis_url=s.redis_url)
+        backend, redis_url = bus_location(self.bootstrap)
+        self.bus = make_bus(backend, "dashboard", data_dir=self.paths.data, redis_url=redis_url)
         self.error = ""
         try:
             self._run(self.bus.connect(), 15)
         except Exception as e:  # shown on every page instead of crashing
-            self.error = f"cannot open the message bus ({s.bus_backend}): {e}"
+            self.error = f"cannot open the message bus ({backend}): {e}"
 
     def _run(self, coro, timeout: float = 10.0):
         return asyncio.run_coroutine_threadsafe(coro, self.loop).result(timeout)

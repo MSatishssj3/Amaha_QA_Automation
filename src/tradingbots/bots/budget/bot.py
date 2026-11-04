@@ -50,7 +50,7 @@ class BudgetBot(Bot):
         self.command("status", self.cmd_status)
         self.command("history", self.cmd_history)
         self.every(30.0, self.publish_policy, name="policy", run_at_start=True)
-        self.every(2.0, self.flush, name="usage", run_at_start=True)
+        self.every(2.0, self.flush, name="usage", run_at_start=True, wall_clock=True)
         self.daily(lambda: self.settings.schedule.budget_summary, self.end_of_day, name="summary")
         self.day = ""
         self.trades_today: list[dict] = []

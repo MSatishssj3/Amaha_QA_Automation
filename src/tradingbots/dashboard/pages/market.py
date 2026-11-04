@@ -31,7 +31,7 @@ def live() -> None:
         ch = v.get("change_pct")
         rows.append({"Symbol": v.get("symbol"), "LTP": v.get("ltp"),
                      "Change": f"{T.arrow(ch)} {T.pct(ch, nd=2)}" if ch is not None else "-",
-                     "Bid": v.get("bid"), "Ask": v.get("ask"), "Volume": v.get("volume"),
+                     "Bid": v.get("bid") or None, "Ask": v.get("ask") or None, "Volume": v.get("volume"),
                      "Prev close": v.get("prev_close"),
                      "Updated": f"{max(0, now - float(v['updated_ts'])):.0f}s ago" if v.get("updated_ts") else "-"})
     ui.table(rows, column_config={"LTP": st.column_config.NumberColumn(format="%.2f"),

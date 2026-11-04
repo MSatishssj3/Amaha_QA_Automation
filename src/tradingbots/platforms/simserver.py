@@ -8,7 +8,9 @@ out to the other bots exactly as it would a real Dhan token.
 from __future__ import annotations
 
 import dataclasses
+import os
 
+from dhanbot.dhan.rest import DhanRest
 from dhanbot.sim.mock_dhan import MockDhan
 
 from ..core import topics
@@ -29,6 +31,24 @@ class SimMarketBot(Bot):
         self.mock.add_holding("HDFCBANK", 5, 1890.0)
         await self.mock.start(port=int((self.ctx.sim or {}).get("port", 0)))
         await self._publish()
+        if os.environ.get("TRADINGBOTS_DEMO_MANUAL"):  # `bots demo`: you also trade by hand, in the "Dhan app"
+            self.spawn(self._manual_trade(), name="demo-manual")
+
+    async def _manual_trade(self) -> None:
+        """One BUY placed directly with the exchange, not by the trading engine, so the budget bot counts it
+        as your own trade."""
+        await self.clock.sleep(20 * 60)
+        assert self.mock is not None
+        rest = DhanRest(self.mock.endpoints(), self.mock.client_id, self.mock.token)
+        await rest.start()
+        try:
+            body = rest.dumps({"transactionType": "BUY", "exchangeSegment": "NSE_EQ", "productType": "CNC",
+                               "orderType": "MARKET", "validity": "DAY", "securityId": "1333", "quantity": 4,
+                               "price": 0, "correlationId": "MANUAL-DEMO"})
+            res = await rest.place_order_raw(body)
+            self.log.info("demo manual trade placed: %s", "ok" if res.ok else res.error)
+        finally:
+            await rest.close()
 
     async def _publish(self) -> None:
         if self.mock is None:

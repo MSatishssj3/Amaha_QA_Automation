@@ -238,6 +238,11 @@ def seed_tables(tmp) -> None:
     st.replace("history_metrics", rows)
     st.replace("quotes_latest", [{"symbol": s, "segment": "NSE_EQ", "ltp": 1405.0 + i * 100, "change_pct": 0.35,
                                   "updated_ts": 0.0} for i, s in enumerate(SYMS)])
+    # holdings with integer quantities: DuckDB returns SUM() over them as Decimal (a real demo crash, now covered)
+    st.replace("money_allocation", [{"platform": "simulated", "symbol": "INFY", "kind": "holding", "qty": 10,
+                                     "invested": 14800.0, "current_value": 15160.0, "pnl": 360.0, "weight_pct": 60.0},
+                                    {"platform": "simulated", "symbol": "TCS", "kind": "holding", "qty": 3,
+                                     "invested": 9900.0, "current_value": 10110.0, "pnl": 210.0, "weight_pct": 40.0}])
 
 
 def ai_settings(tmp, **ai):
@@ -273,7 +278,7 @@ async def test_bot_runs_an_analysis_stores_it_and_logs_the_cost(tmp_path, fake_c
         full = await c.request(topics.cmd("ai_analyst", "report"), {"id": r["report_id"]})
         rep = full["report"]
         assert rep["status"] == "ok" and rep["report"]["headline"].startswith("Large caps")
-        assert "The analysis left out: INFY" in rep["report"]["caveats"]  # the fake skipped one stock
+        assert "The analysis left out: INFY, TCS" in rep["report"]["caveats"]  # the fake skipped these (TCS is held)
         assert "| RELIANCE | up | watch | medium |" in rep["markdown"]
         md_files = list((tmp_path / "data" / "ai_analyst" / "reports").rglob("*-post_close.md"))
         assert len(md_files) == 1 and "not financial advice" in md_files[0].read_text()
@@ -368,5 +373,22 @@ async def test_disabled_without_credentials_and_stub_mode(tmp_path, monkeypatch)
         assert r["ran"] and r["headline"].startswith("[Demo stub - no AI]") and r["cost_usd"] == 0
         rep = (await team.client.request(topics.cmd("ai_analyst", "report"), {"id": r["report_id"]}))["report"]
         assert rep["provider"] == "stub" and "not by Claude" in rep["report"]["caveats"][0]
-        assert len(rep["report"]["stocks"]) == 3 and rep["report"]["stocks"][0]["key_levels"]["support"]
+        stocks = rep["report"]["stocks"]
+        assert len(stocks) == 4 and stocks[0]["key_levels"]["support"]
+        assert stocks[-1]["symbol"] == "TCS" and stocks[-1]["watch_action"] == "hold"  # held, so it is analysed too
         assert TableReader(tmp_path / "data" / "tables").count("ai_costs") == 0
+
+
+def test_packet_from_real_table_types_is_json_safe(tmp_path):
+    import orjson
+
+    from tradingbots.bots.ai_analyst.packet import build_packet
+    from tradingbots.bots.ai_analyst.prompt import user_message
+
+    seed_tables(tmp_path)
+    s = make_settings(tmp_path)
+    packet, notes = build_packet(TableReader(tmp_path / "data" / "tables"), s, "midday", 1_793_000_000.0, None)
+    orjson.dumps(packet)  # no Decimal / numpy values left
+    held = {x["symbol"]: x.get("position") for x in packet["stocks"]}
+    assert held["INFY"]["qty"] == 10.0 and held["TCS"]["pnl_pct"] == pytest.approx(2.12, abs=0.01)  # held, not watched
+    assert "TCS: no daily history yet" in notes and "<packet>" in user_message("midday", packet)

@@ -24,3 +24,7 @@ dist/
 venv/
 .pytest_cache/
 .ruff_cache/
+
+# `bots demo` working folder, and your personal strategy config (`bots init` creates it from the template)
+.demo/
+config/dhanbot.toml

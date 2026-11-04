@@ -54,7 +54,7 @@ class ExecutionBot(Bot):
         self.on(topics.AUTH_TOKEN, self.on_token)
         self.command("control", self.cmd_control)
         self.command("status", self.cmd_status)
-        self.every(2.0, self.publish_state, name="state")
+        self.every(2.0, self.publish_state, name="state", wall_clock=True)
         self.engine: Engine | None = None
         self.guard: BudgetGuard | None = None
         self.exec_mode = ""  # paper | live | simulated-exchange
@@ -72,6 +72,8 @@ class ExecutionBot(Bot):
         self._fwd_alerts: deque[tuple[float, str]] = deque(maxlen=200)
         self._last_pnl: dict | None = None
         self._last_pnl_ts = 0.0
+        self._placed: dict[str, float] = {}  # cid -> when the order was first seen (placed)
+        self._legs_sent: dict[str, tuple] = {}  # cid -> super-order leg statuses last published
 
     def details(self) -> dict:
         e = self.engine
@@ -287,12 +289,22 @@ class ExecutionBot(Bot):
                 self._on_reject(o)
             return
         now = self.clock.time()
+        if ev.kind == "leg_update":  # the engine re-reports leg states on every reconcile: publish changes only
+            legs = tuple(sorted((k, getattr(v, "value", str(v))) for k, v in (o.meta.get("leg_status") or {}).items()))
+            if self._legs_sent.get(o.cid) == legs:
+                return
+            self._legs_sent[o.cid] = legs
+        placed = self._placed.setdefault(o.cid, now)
+        if len(self._placed) > 20_000:  # a long-running engine: keep the map bounded
+            for k in list(self._placed)[:10_000]:
+                self._placed.pop(k, None)
+                self._legs_sent.pop(k, None)
         self._queue(topics.EXEC_ORDER, {
             "cid": o.cid, "broker_id": o.broker_id, "symbol": o.instrument.trading_symbol, "segment": o.instrument.segment,
             "side": o.side.value, "qty": o.qty, "price": o.price_paise / 100, "status": o.status.value,
             "intent": o.intent.value, "role": o.role, "filled_qty": o.filled_qty,
             "avg_price": round(o.avg_fill_paise / 100, 4), "reason": o.reason, "event": ev.kind, "updated_ts": now,
-            "platform": self.platform_name})
+            "placed_ts": placed, "platform": self.platform_name})
         f = ev.fill
         if ev.kind == "fill" and f is not None:
             self._queue(topics.EXEC_FILL, {
@@ -323,12 +335,18 @@ class ExecutionBot(Bot):
                 self._error("publish event", e)
 
     async def _forward_alerts(self, e: Engine) -> None:
-        """The engine's own alerts (preflight, kill switch, day report, ...) go to the team's alert topic."""
+        """The engine's warnings and errors (preflight, kill switch, ...) and its day report go to the team's alert
+        topic. Routine INFO notes such as each fill are left out: fills are on the Trading page."""
         for a in list(e.alerts):
             k = (a.ts, a.text)
-            if k not in self._fwd_alerts:
-                self._fwd_alerts.append(k)
-                await self.alert(f"[engine] {a.text}", a.level if a.level in ("INFO", "WARNING", "ERROR") else "WARNING")
+            if k in self._fwd_alerts:
+                continue
+            self._fwd_alerts.append(k)
+            if a.level in ("WARNING", "ERROR") or a.text.startswith("Day report"):
+                text = a.text
+                if self.exec_mode == "simulated-exchange":  # the engine says [live]: it trades with the simulated exchange
+                    text = text.replace("[live]", "[simulated exchange]")
+                await self.alert(f"[engine] {text}", a.level if a.level in ("INFO", "WARNING", "ERROR") else "WARNING")
 
     async def publish_state(self) -> None:
         e, now = self.engine, self.clock.time()

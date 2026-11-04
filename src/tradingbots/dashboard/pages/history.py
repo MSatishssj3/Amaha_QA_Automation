@@ -32,14 +32,15 @@ m = metrics.get(sym)
 if m:
     a, b, c, d, e = st.columns(5)
     a.metric("Trend", f"{T.arrow(m.get('trend_score'))} {str(m.get('trend') or '-').replace('_', ' ')}",
-             f"score {m['trend_score']:+.0f}" if m.get("trend_score") is not None else None, delta_color="off")
-    b.metric("1 month", T.pct(m.get("ret_1m")), f"1 year {T.pct(m.get('ret_1y'))}", delta_color="off")
+             f"score {m['trend_score']:+.0f}" if m.get("trend_score") is not None else None, delta_color="off",
+             delta_arrow="off")
+    b.metric("1 month", T.pct(m.get("ret_1m")), f"1 year {T.pct(m.get('ret_1y'))}", delta_color="off", delta_arrow="off")
     c.metric("RSI 14", f"{m['rsi14']:.0f}" if m.get("rsi14") is not None else "-",
              help="above 70: stretched after a rise; below 30: after a fall")
     d.metric("vs 50-day average", T.pct(m.get("dist_sma50")), f"vs 200-day {T.pct(m.get('dist_sma200'))}",
-             delta_color="off")
+             delta_color="off", delta_arrow="off")
     e.metric("From 52-week high", T.pct(-(m.get("from_high_52w") or 0)) if m.get("from_high_52w") is not None else "-",
-             f"volatility {T.pct(m.get('vol_ann'), signed=False)} / yr", delta_color="off")
+             f"volatility {T.pct(m.get('vol_ann'), signed=False)} / yr", delta_color="off", delta_arrow="off")
 else:
     st.caption("No metrics for this stock yet - the history bot computes them after the first daily refresh.")
 

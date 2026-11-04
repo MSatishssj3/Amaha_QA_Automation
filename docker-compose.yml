@@ -1,0 +1,33 @@
+# The whole team with a Redis bus. Run from the project folder (it holds config/ and .env):
+#   bots init && bots set-password      (once, or copy the templates by hand)
+#   docker compose up -d --build
+# The dashboard is published on 127.0.0.1 only: use an SSH tunnel to reach it from elsewhere.
+services:
+  redis:
+    image: redis:7-alpine
+    # private compose network only (no published port); the file keeps data across restarts
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf", "--bind", "0.0.0.0", "--protected-mode", "no"]
+    volumes:
+      - ./deploy/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - redis-data:/data
+    restart: unless-stopped
+
+  bots:
+    build: .
+    command: ["run", "--all"]
+    environment:
+      TRADINGBOTS_BUS_BACKEND: redis
+      TRADINGBOTS_REDIS_URL: redis://redis:6379/0
+      TRADINGBOTS_DASHBOARD_ADDRESS: 0.0.0.0   # inside the container; the host side stays on 127.0.0.1
+    volumes:
+      - ./:/data
+    ports:
+      - "127.0.0.1:8501:8501"
+    depends_on:
+      - redis
+    # the trading engine may need ~30 s to flatten intraday positions on shutdown
+    stop_grace_period: 120s
+    restart: unless-stopped
+
+volumes:
+  redis-data: {}

@@ -28,14 +28,13 @@ from typing import Any, Callable
 
 import anthropic
 from dhanbot.clock import ist_datetime
-from pydantic import BaseModel
 
 from ...core import topics
 from ...core.bot import Bot
 from ...core.secrets import load_env
 from ...core.settings import Settings
 from ...core.tables_io import TableReader, TableStore
-from .claude import BATCH_DISCOUNT, Claude, ClaudeError, CallResult, build_request, prices_for
+from .claude import BATCH_DISCOUNT, CallResult, Claude, ClaudeError, Pong, build_request, ping_request, prices_for
 from .packet import build_packet
 from .prompt import user_message
 from .schema import DeepDive, Report
@@ -43,10 +42,6 @@ from .store import AIStore
 from .stub import stub_report
 
 DEEP_DIVE_MAX_TOKENS = 16000
-
-
-class _Pong(BaseModel):
-    reply: str
 
 
 def _has_cli_profile() -> bool:
@@ -231,8 +226,16 @@ class AIAnalystBot(Bot):
                 await self.clock.sleep(300.0)  # re-read the schedule every 5 minutes
                 continue
             await self.clock.sleep(max(0.0, nxt - now))
-            if self.mode != "disabled":
+            if self.mode == "disabled":
+                continue
+            try:  # one failed run must never stop the schedule
                 await self.analyse(self.kind_for(nxt), source="schedule")
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                self._error("scheduled analysis", e)
+                await self.alert(f"AI {self.kind_for(nxt).replace('_', ' ')} analysis failed: {type(e).__name__}: {e}",
+                                 "ERROR", key="ai-error")
 
     async def analyse(self, kind: str, symbols: list[str] | None = None, source: str = "schedule") -> dict:
         if self.mode == "disabled":
@@ -444,15 +447,8 @@ class AIAnalystBot(Bot):
         """One tiny real call to check the key (a fraction of a cent; runs even when the daily cap is used up)."""
         if self.mode != "anthropic" or self.claude is None:
             return {"ok_key": False, "reason": self.reason}
-        ai = self.settings.ai
-        req = {"model": ai.model, "max_tokens": 1024,
-               "system": [{"type": "text", "text": "You check that an API connection works."}],
-               "messages": [{"role": "user", "content": "Reply with the single word OK."}],
-               "thinking": {"type": "adaptive"},
-               "output_config": {"effort": "low", "format": {"type": "json_schema",
-                                                             "schema": anthropic.transform_schema(_Pong)}}}
         try:
-            res = await self.claude.run(req, _Pong)
+            res = await self.claude.run(ping_request(self.settings.ai), Pong)
         except ClaudeError as e:
             await self._record_error("test", e)
             return {"ok_key": e.kind not in ("auth", "permission"), "error": str(e), "error_kind": e.kind}

@@ -54,8 +54,8 @@ class TablesBot(Bot):
         self.command("list", self.cmd_list)
         self.command("flush", self.cmd_flush)
         self.command("compact", self.cmd_compact)
-        self.every(2.0, self.flush, name="flush")
-        self.every(5.0, self.write_quotes, name="quotes")
+        self.every(2.0, self.flush, name="flush", wall_clock=True)
+        self.every(5.0, self.write_quotes, name="quotes", wall_clock=True)
         self.daily(lambda: self.settings.schedule.compaction, self.compact_all, name="compaction",
                    trading_days_only=False)
         self.quotes: dict[str, dict] = {}

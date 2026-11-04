@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import math
 from datetime import date
+from decimal import Decimal
 from typing import Any
 
 from dhanbot.clock import ist_datetime
@@ -30,6 +31,9 @@ METRIC_FIELDS = ("close", "ret_1d", "ret_1w", "ret_1m", "ret_3m", "ret_6m", "ret
 
 
 def _clean(v: Any, nd: int = 2) -> Any:
+    """JSON-safe, rounded. DuckDB returns SUM() over integer columns as Decimal, so those become floats."""
+    if isinstance(v, Decimal):
+        v = float(v)
     if isinstance(v, float):
         return None if math.isnan(v) or math.isinf(v) else round(v, nd)
     if isinstance(v, date):
@@ -51,8 +55,9 @@ def build_packet(reader: TableReader, settings: Settings, kind: str, now: float,
     notes: list[str] = []
     metrics = {r["symbol"]: r for r in _rows(reader, "SELECT * FROM history_metrics")}
     quotes = {r["symbol"]: r for r in _rows(reader, "SELECT * FROM quotes_latest")}
-    alloc = _rows(reader, "SELECT platform, symbol, kind, SUM(qty) AS qty, SUM(invested) AS invested, "
-                          "SUM(current_value) AS current_value, SUM(pnl) AS pnl, SUM(weight_pct) AS weight_pct "
+    alloc = _rows(reader, "SELECT platform, symbol, kind, CAST(SUM(qty) AS DOUBLE) AS qty, "
+                          "CAST(SUM(invested) AS DOUBLE) AS invested, CAST(SUM(current_value) AS DOUBLE) AS current_value, "
+                          "CAST(SUM(pnl) AS DOUBLE) AS pnl, CAST(SUM(weight_pct) AS DOUBLE) AS weight_pct "
                           "FROM money_allocation GROUP BY platform, symbol, kind ORDER BY current_value DESC")
     held = {r["symbol"]: r for r in alloc if r.get("symbol") and (r.get("qty") or 0) != 0}
     wanted = symbols or [w.symbol for w in settings.stocks()]

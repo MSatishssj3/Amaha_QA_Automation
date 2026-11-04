@@ -32,12 +32,13 @@ def live() -> None:
         k2.metric("Today's P&L (trading engine)", "-", help=ex.get("note") or "the trading engine is not running")
     dc = next((i for i in usage.get("limits", []) if i["rule"] == "daily_capital"), None)
     if dc:
-        k3.metric("Daily budget used", f"{dc['pct']:.0f}%", f"{T.inr(dc['remaining'])} left", delta_color="off")
+        k3.metric("Daily budget used", f"{dc['pct']:.0f}%", f"{T.inr(dc['remaining'])} left", delta_color="off",
+                  delta_arrow="off")
     else:
         k3.metric("Daily budget used", "-", help="the budget bot has not reported yet")
     spent, cap = ai_hb.get("spent_today_usd"), ai_hb.get("budget_usd")
     k4.metric("AI spend today", T.usd(spent) if spent is not None else "-",
-              f"of {T.usd(cap)} budget" if cap is not None else None, delta_color="off")
+              f"of {T.usd(cap)} budget" if cap is not None else None, delta_color="off", delta_arrow="off")
 
     left, right = st.columns([3, 2], gap="large")
     with left:

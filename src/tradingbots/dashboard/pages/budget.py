@@ -24,12 +24,12 @@ def live() -> None:
         st.info("No usage reported yet - start the budget bot (`bots run --all`).")
         return
     k = st.columns(4)
-    k[0].metric("New entries today", T.inr(u["total"]["turnover_inr"]), f"{u['total']['entries']} entries",
-                delta_color="off")
-    k[1].metric("By the trading engine", T.inr(u["bot"]["turnover_inr"]), f"{u['bot']['entries']} entries",
-                delta_color="off")
-    k[2].metric("By you (Dhan app)", T.inr(u["external"]["turnover_inr"]), f"{u['external']['trades']} orders",
-                delta_color="off")
+    k[0].metric("New entries today", T.inr(u["total"]["turnover_inr"]), T.plural(u["total"]["entries"], "entry", "entries"),
+                delta_color="off", delta_arrow="off")
+    k[1].metric("By the trading engine", T.inr(u["bot"]["turnover_inr"]), T.plural(u["bot"]["entries"], "entry", "entries"),
+                delta_color="off", delta_arrow="off")
+    k[2].metric("By you (Dhan app)", T.inr(u["external"]["turnover_inr"]), T.plural(u["external"]["trades"], "order"),
+                delta_color="off", delta_arrow="off")
     k[3].metric("Entries blocked by the budget", u.get("budget_rejects", 0))
     warn = (b.alert_at_pct or [80])[0]
     for it in u.get("limits", []):

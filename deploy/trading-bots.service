@@ -1,0 +1,37 @@
+# systemd unit for the whole team (every bot + the dashboard, supervised).
+#   sudo cp deploy/trading-bots.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now trading-bots
+#   journalctl -u trading-bots -f        (alerts and restarts; each bot also logs to logs/<bot>.jsonl)
+#
+# If you used dhan_bot's own service (dhanbot.service) before, disable it first:
+#   sudo systemctl disable --now dhanbot
+# Two trading engines on one account would double-trade.
+
+[Unit]
+Description=trading-bots: market data, tables, history, money, daily budget, AI analyst, execution, dashboard
+After=network-online.target redis-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=trader
+Group=trader
+WorkingDirectory=/opt/trading-bots
+ExecStart=/opt/trading-bots/.venv/bin/bots --dir /opt/trading-bots run --all
+Restart=on-failure
+RestartSec=10
+# a graceful stop lets the trading engine flatten intraday positions (up to ~30 s) before exiting
+KillSignal=SIGTERM
+TimeoutStopSec=120
+Environment=PYTHONUNBUFFERED=1
+
+# hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/trading-bots
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

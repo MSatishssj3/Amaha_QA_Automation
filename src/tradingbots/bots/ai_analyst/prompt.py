@@ -94,9 +94,17 @@ budget.engine: whether the trading bot is running and in which mode.
 """
 
 
+def json_default(v):
+    """Anything a table can hand back that JSON does not know (Decimal, numpy scalars) becomes a number or text."""
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return str(v)
+
+
 def user_message(kind: str, packet: dict) -> str:
     """The per-run part of the request: the report kind and the data, after the cached system prompt."""
-    body = orjson.dumps(packet, option=orjson.OPT_SORT_KEYS | orjson.OPT_NON_STR_KEYS).decode()
+    body = orjson.dumps(packet, option=orjson.OPT_SORT_KEYS | orjson.OPT_NON_STR_KEYS, default=json_default).decode()
     if kind == "deep_dive":
         task = (f"Report kind: deep_dive for {packet.get('stocks', [{}])[0].get('symbol', '?')} "
                 f"({packet.get('as_of', '')}). Analyse this one stock in depth and fill in the deep dive.")

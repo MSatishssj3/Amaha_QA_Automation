@@ -19,7 +19,7 @@ k[1].metric("Invested", T.inr(ms.get("invested"), compact=True))
 up = ms.get("unrealized_pnl")
 k[2].metric("Unrealised P&L", f"{T.arrow(up)} {T.inr(up, signed=True)}" if up is not None else "-")
 k[3].metric("Charges this month", T.inr(ms.get("charges_mtd")), f"{T.inr(ms.get('charges_ytd'))} this year",
-            delta_color="off")
+            delta_color="off", delta_arrow="off")
 x = ms.get("xirr")
 k[4].metric("XIRR", T.pct(x) if x is not None else "-", help="annualised return on the money you deposited")
 
@@ -40,7 +40,7 @@ with right:
     since = date.today() - timedelta(days=45)
     pnl = cli.query("SELECT day, SUM(realized) AS realized, SUM(net) AS net FROM money_pnl WHERE day >= ? "
                     "GROUP BY day ORDER BY day", [since])
-    ui.chart(charts.diverging_bars(pnl["day"].to_list() if not pnl.is_empty() else [],
+    ui.chart(charts.diverging_bars([f"{d:%d %b}" for d in pnl["day"].to_list()] if not pnl.is_empty() else [],
                                    pnl["net"].to_list() if not pnl.is_empty() else [], t))
     st.caption("Realised profit or loss per day, after charges. Blue above zero, red below.")
 
@@ -49,8 +49,9 @@ c1, c2 = st.columns(2, gap="large")
 monthly = cli.query("SELECT month, SUM(total) AS total, SUM(turnover) AS turnover FROM money_charges "
                     "GROUP BY month ORDER BY month")
 with c1:
-    ui.chart(charts.columns(monthly["month"].to_list() if not monthly.is_empty() else [],
-                            monthly["total"].to_list() if not monthly.is_empty() else [], t))
+    months = [date.fromisoformat(f"{m}-01").strftime("%b %Y") for m in monthly["month"].to_list()] \
+        if not monthly.is_empty() else []
+    ui.chart(charts.columns(months, monthly["total"].to_list() if not monthly.is_empty() else [], t))
     st.caption("All charges per month: brokerage, STT, exchange fees, SEBI fee, stamp duty and GST.")
 by_type = cli.query("SELECT SUM(brokerage) AS brokerage, SUM(stt) AS stt, SUM(exchange_txn) AS exchange, "
                     "SUM(sebi) AS sebi, SUM(stamp_duty) AS stamp, SUM(gst) AS gst FROM money_charges "

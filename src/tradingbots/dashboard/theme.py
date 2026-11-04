@@ -77,7 +77,13 @@ def pct(x: float | None, signed: bool = True, nd: int = 1) -> str:
 
 
 def usd(x: float | None) -> str:
-    return "-" if x is None else (f"${x:,.4f}" if abs(x) < 1 else f"${x:,.2f}")
+    if x is None:
+        return "-"
+    return f"${x:,.2f}" if x == 0 or abs(x) >= 0.01 else f"${x:,.4f}"  # tiny per-call costs keep 4 places
+
+
+def plural(n: float, word: str, many: str | None = None) -> str:
+    return f"{n:,.0f} {word if n == 1 else (many or word + 's')}"
 
 
 def arrow(x: float | None) -> str:
@@ -99,10 +105,10 @@ def style(fig, t: dict[str, Any], *, height: int = 320, legend: bool = False, ho
         hoverlabel=dict(bgcolor=t["surface"], bordercolor=t["axis"], font=dict(family=FONT, color=t["ink"], size=12)),
     )
     fig.update_xaxes(showgrid=False, linecolor=t["axis"], linewidth=1, tickfont=dict(color=t["muted"]), zeroline=False,
-                     ticks="", showspikes=hover.startswith("x"), spikecolor=t["muted"], spikethickness=1,
+                     automargin=True, ticks="", showspikes=hover.startswith("x"), spikecolor=t["muted"], spikethickness=1,
                      spikedash="solid", spikemode="across", spikesnap="cursor")
     fig.update_yaxes(showgrid=True, gridcolor=t["grid"], gridwidth=1, griddash="solid", linecolor=t["axis"],
-                     tickfont=dict(color=t["muted"]), zeroline=False, ticks="")
+                     tickfont=dict(color=t["muted"]), zeroline=False, ticks="", automargin=True)
     return fig
 
 
@@ -111,7 +117,7 @@ def thin_bargap(n_bars: int, plot_px: float, max_px: float = 22.0) -> float:
     if n_bars <= 0:
         return 0.3
     band = plot_px / n_bars
-    return min(0.85, max(0.15, 1 - max_px / band))
+    return min(0.97, max(0.15, 1 - max_px / band))
 
 
 def diverging_scale(t: dict[str, Any]) -> list:

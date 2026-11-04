@@ -8,6 +8,8 @@ from pathlib import Path
 
 import orjson
 
+from .prompt import json_default
+
 
 class AIStore:
     def __init__(self, path: Path) -> None:
@@ -59,8 +61,8 @@ class AIStore:
         rid = f"{day}-{kind}-{uuid.uuid4().hex[:8]}"
         self.db.execute("INSERT INTO reports VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         (rid, ts, day, kind, status, model, served_by, headline,
-                         orjson.dumps(report).decode() if report is not None else None, markdown,
-                         orjson.dumps(packet).decode(), usd, error, provider))
+                         orjson.dumps(report, default=json_default).decode() if report is not None else None, markdown,
+                         orjson.dumps(packet, default=json_default).decode(), usd, error, provider))
         return rid
 
     def reports(self, limit: int = 20, kind: str | None = None) -> list[dict]:

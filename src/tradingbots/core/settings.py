@@ -10,6 +10,7 @@ Unknown keys are rejected (a typo must never silently fall back to a default whe
 from __future__ import annotations
 
 import copy
+import os
 import tomllib
 from pathlib import Path
 from typing import Any, Literal
@@ -253,6 +254,17 @@ def load_settings_file(path: Path) -> Settings:
     except tomllib.TOMLDecodeError as e:
         raise SettingsError([f"{path}: TOML syntax error: {e}"]) from None
     return parse_settings(data)
+
+
+# For containers: where the bus and the dashboard listen, without editing settings.toml. Applied only where a
+# process reads these values at start, never to the settings that are saved, so an override cannot leak into the file.
+def bus_location(s: Settings) -> tuple[str, str]:
+    return (os.environ.get("TRADINGBOTS_BUS_BACKEND") or s.system.bus_backend,
+            os.environ.get("TRADINGBOTS_REDIS_URL") or s.system.redis_url)
+
+
+def dashboard_address(s: Settings) -> str:
+    return os.environ.get("TRADINGBOTS_DASHBOARD_ADDRESS") or s.dashboard.address
 
 
 def write_settings_file(path: Path, s: Settings) -> None:

@@ -126,7 +126,8 @@ class ConfigBot(Bot):
             env = load_env(self.ctx.paths.base)
             cfg = load_dhan_config(data={"dhan": {"auth": self.settings.platform.dhan_auth},
                                          "paths": {"data_dir": str(self.ctx.paths.bot("config"))}}, env=env)
-            self._tm = TokenManager(cfg, Endpoints(), self.clock, cache_path=self.ctx.paths.bot("config") / "dhan_token.json")
+            self._tm = TokenManager(cfg, Endpoints(), self.clock,
+                                    cache_path=self.ctx.paths.bot("config") / "dhan_token.json")
         return self._tm
 
     async def _share_token(self, platform: str, client_id: str, token: str, expires_at: float | None,

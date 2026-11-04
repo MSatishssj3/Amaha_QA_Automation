@@ -23,16 +23,21 @@ def live() -> None:
     if ex.get("running") and mode == "live":
         st.error("**LIVE mode** - this engine places real orders with real money.")
     k = st.columns(5)
-    k[0].metric("Mode", mode, ex.get("platform"), delta_color="off")
-    k[1].metric("State", ex.get("state", "-"), ex.get("reason") or None, delta_color="off")
+    shown = {"simulated-exchange": "simulated", "paper": "paper", "live": "LIVE"}.get(mode, mode)
+    k[0].metric("Mode", shown, f"platform {ex.get('platform')}", delta_color="off", delta_arrow="off",
+                help="simulated: orders go to the built-in simulated exchange; paper: simulated fills on live prices; "
+                     "LIVE: real orders")
+    k[1].metric("State", ex.get("state", "-"), ex.get("reason") or None, delta_color="off", delta_arrow="off")
     net = ex.get("net_pnl")
     k[2].metric("Net P&L today", f"{T.arrow(net)} {T.inr(net, signed=True)}" if net is not None else "-",
-                f"charges {T.inr(ex.get('charges'))}" if ex.get("charges") is not None else None, delta_color="off")
+                f"charges {T.inr(ex.get('charges'))}" if ex.get("charges") is not None else None, delta_color="off",
+                delta_arrow="off")
     k[3].metric("Open positions", ex.get("open_positions", 0), f"{ex.get('working_orders', 0)} working orders",
-                delta_color="off")
+                delta_color="off", delta_arrow="off")
     g = ex.get("guard") or {}
     k[4].metric("Budget used by the engine", T.inr(g.get("turnover_inr")),
-                f"{T.inr(g.get('reserved_inr'))} reserved by open entries" if g else None, delta_color="off")
+                f"{T.inr(g.get('reserved_inr'))} reserved" if g else None, delta_color="off", delta_arrow="off",
+                help="entries filled today; 'reserved' is held for entry orders still working")
     if g.get("policy_problem"):
         st.warning(f"New entries are blocked: {g['policy_problem']}")
     pnl = (cli.recent(topics.EXEC_PNL, 1) or [{}])[0]
@@ -75,6 +80,12 @@ if new != on:
 
 today = ui.team_today(cli)
 st.subheader("Today's orders")
-ui.table(cli.table("exec_orders", "date = ?", [today], order="updated_ts DESC"))
+orders = cli.table("exec_orders", "date = ?", [today], order="COALESCE(placed_ts, updated_ts) DESC")
+ui.table([{"Placed": ui.hhmm(o.get("placed_ts") or o["updated_ts"]), "Stock": o["symbol"], "Side": o["side"],
+           "Qty": o["qty"], "Price": o["price"], "Status": o["status"], "Purpose": o["intent"].lower(),
+           "Filled": o["filled_qty"], "Avg price": o["avg_price"], "Reason": o["reason"] or "", "Order id": o["broker_id"]}
+          for o in orders.to_dicts()])
 st.subheader("Today's fills")
-ui.table(cli.table("exec_fills", "date = ?", [today], order="ts DESC"))
+fills = cli.table("exec_fills", "date = ?", [today], order="ts DESC")
+ui.table([{"Time": ui.hhmm(f["ts"]), "Stock": f["symbol"], "Side": f["side"], "Qty": f["qty"], "Price": f["price"],
+           "Purpose": f["intent"].lower(), "Order id": f["broker_id"]} for f in fills.to_dicts()])
