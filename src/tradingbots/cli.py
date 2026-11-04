@@ -11,6 +11,8 @@
     bots ai test                  one tiny real Claude call to check the API key (a fraction of a cent)
     bots notify test|summary      send a test message (Telegram + email) or today's summary now
     bots tax report [--fy 2026-27] estimated tax for a financial year + every sale as CSV for your CA
+    bots backup now|list|verify   back up config/ and data/ now, list the archives, check one
+    bots restore <archive>        put a backup back (the team must be stopped; current files are moved aside)
     bots config get|set|history|rollback
 
 ``--dir`` points at the project folder (default: current directory).
@@ -561,6 +563,103 @@ def cmd_tax(base: Path, fy: str | None, out: str | None) -> int:
     return 0
 
 
+def _running_bots(base: Path) -> list[str]:
+    """Bots with a fresh heartbeat (or processes the supervisor reports as running)."""
+    from .supervisor import KV_SUPERVISOR
+
+    async def get(bus):
+        hbs = {k[3:]: await bus.kv_get(k) for k in await bus.kv_keys("hb:")}
+        return await bus.kv_get(KV_SUPERVISOR), hbs
+
+    sup, hbs = asyncio.run(_with_bus(base, get))
+    now = time.time()
+    live = sorted(n for n, hb in hbs.items() if hb and hb.get("status") != "stopped" and now - float(hb.get("ts") or 0) < 30)
+    if sup and now - float(sup.get("ts") or 0) < 30:
+        live = sorted(set(live) | {"supervisor"})
+    return live
+
+
+def cmd_backup(base: Path, action: str, target: str | None) -> int:
+    from .bots.backup import archive as AR
+
+    s = _settings(base)
+    paths = Paths(base, s)
+    out = paths.resolve(s.backup.dir)
+    if action == "list":
+        rows = AR.list_backups(out)
+        if not rows:
+            _p(f"No backups in {out} yet.")
+            return 1
+        for r in rows:
+            _p(f"{r['file']}  {r['size'] / 1e6:8.1f} MB  {r['files'] or '?':>5} files  {r['reason']}")
+        return 0
+    if action == "verify":
+        if not target:
+            _p("say which archive: bots backup verify backups/<file>")
+            return 2
+        ok, problems = AR.verify(Path(target))
+        _p("OK - every file matches its checksum." if ok else "FAILED:\n" + "\n".join(f"  {p}" for p in problems[:20]))
+        return 0 if ok else 1
+
+    async def via_bot(bus):
+        hb = await bus.kv_get(topics.kv_heartbeat("backup"))
+        if hb and time.time() - float(hb.get("ts") or 0) < 30:
+            return await bus.request(topics.cmd("backup", "run"), {}, timeout=900)
+        return None
+
+    r = asyncio.run(_with_bus(base, via_bot))
+    if r is None:  # the backup bot is not running: do it here
+        try:
+            r = AR.create_backup(base / "config", paths.data, out, include_ticks=s.backup.include_ticks,
+                                 meta={"reason": "bots backup now"})
+            r["pruned"] = AR.prune(out, s.backup.keep_daily, s.backup.keep_weekly)
+            r["saved"] = True
+        except Exception as e:
+            r = {"saved": False, "error": f"{type(e).__name__}: {e}"}
+    if not r.get("saved"):
+        _p(f"Backup FAILED: {r.get('error')}")
+        return 1
+    _p(f"Saved {r['file']} ({r['files']} files, {r['size'] / 1e6:.1f} MB) in {out}; verified against its checksums.")
+    if r.get("pruned"):
+        _p(f"Removed {len(r['pruned'])} older backup(s) (keep_daily = {s.backup.keep_daily}, "
+           f"keep_weekly = {s.backup.keep_weekly}).")
+    return 0
+
+
+def cmd_restore(base: Path, target: str, yes: bool) -> int:
+    from .bots.backup import archive as AR
+
+    s = _settings(base)
+    paths = Paths(base, s)
+    arch = Path(target)
+    if not arch.is_file():
+        arch = paths.resolve(s.backup.dir) / target
+    if not arch.is_file():
+        _p(f"No such archive: {target} (see `bots backup list`)")
+        return 2
+    live = _running_bots(base)
+    if live:
+        _p(f"The team is running ({', '.join(live)}). Stop it first (Ctrl+C on `bots run --all`, or "
+           "`sudo systemctl stop trading-bots`), then run this again.")
+        return 1
+    m = AR.read_manifest(arch)
+    _p(f"Restore {arch.name}: {len(m.get('files') or [])} files from {m.get('created')}.")
+    _p(f"Your current config/ and {paths.data} are moved aside (not deleted); .env is not touched.")
+    if not yes and input("Continue? [y/N] ").strip().lower() not in ("y", "yes"):
+        _p("Nothing changed.")
+        return 1
+    try:
+        r = AR.restore(arch, base / "config", paths.data, paths.resolve(s.backup.dir))
+    except AR.BackupError as e:
+        _p(f"Restore refused: {e}")
+        return 1
+    _p(f"Restored {r['files']} files. The previous files are in {r['moved_aside']}.")
+    if r["tokens_kept"]:
+        _p("Your current access token was kept.")
+    _p("Start the team again with `bots run --all`.")
+    return 0
+
+
 def _parse_value(raw: str):
     try:
         return tomllib.loads(f"v = {raw}")["v"]
@@ -672,6 +771,12 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("action", choices=["test"])
     s = sub.add_parser("notify", help="Telegram and email notifications")
     s.add_argument("action", choices=["test", "summary"])
+    s = sub.add_parser("backup", help="back up config/ and data/, list or check the archives")
+    s.add_argument("action", choices=["now", "list", "verify"])
+    s.add_argument("archive", nargs="?", help="for verify: the archive to check")
+    s = sub.add_parser("restore", help="put a backup back (the team must be stopped)")
+    s.add_argument("archive", help="backups/<file> or just the file name")
+    s.add_argument("--yes", action="store_true", help="do not ask for confirmation")
     s = sub.add_parser("tax", help="estimated tax (India) and the statement for your CA")
     s.add_argument("action", choices=["report"])
     s.add_argument("--fy", default=None, help="financial year, e.g. 2026-27 (default: the latest)")
@@ -702,6 +807,10 @@ def main(argv: list[str] | None = None) -> None:
         code = cmd_notify(base, ns.action)
     elif ns.cmd == "tax":
         code = cmd_tax(base, ns.fy, ns.out)
+    elif ns.cmd == "backup":
+        code = cmd_backup(base, ns.action, ns.archive)
+    elif ns.cmd == "restore":
+        code = cmd_restore(base, ns.archive, ns.yes)
     else:
         code = cmd_config(base, ns.action, ns.args)
     sys.exit(code)

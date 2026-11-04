@@ -239,6 +239,24 @@ class TaxCfg(_Strict):
         return v
 
 
+class BackupCfg(_Strict):
+    """Daily backups of config/ and the data folder (tables, bot databases, reports). Never .env, the message bus or
+    access tokens. Restore with `bots restore <archive>` while the team is stopped."""
+
+    enabled: bool = True
+    at: str = "23:45"  # IST, every day
+    dir: str = "backups"  # relative to the project folder (or absolute)
+    keep_daily: int = Field(7, ge=1, le=365)  # newest backup of each of the last N days
+    keep_weekly: int = Field(4, ge=0, le=104)  # plus the newest of each of the last N weeks
+    include_ticks: bool = False  # raw feed recordings (data/ticks) can be large
+    rclone_remote: str = ""  # e.g. "gdrive:trading-bots": copies each backup off the machine (needs rclone)
+
+    @field_validator("at")
+    @classmethod
+    def _at(cls, v: str) -> str:
+        return _hhmm(v)
+
+
 class DashboardCfg(_Strict):
     address: str = "127.0.0.1"
     port: int = Field(8501, ge=1024, le=65535)
@@ -261,6 +279,7 @@ class Settings(_Strict):
     execution: ExecutionCfg = ExecutionCfg()
     notify: NotifyCfg = NotifyCfg()
     tax: TaxCfg = TaxCfg()
+    backup: BackupCfg = BackupCfg()
     dashboard: DashboardCfg = DashboardCfg()
     note: str = ""
 

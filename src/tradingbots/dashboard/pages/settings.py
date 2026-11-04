@@ -1,5 +1,5 @@
-"""Settings: the trading platform, watchlist, schedules, AI options, notifications and Dhan token, with version
-history.
+"""Settings: the trading platform, watchlist, schedules, AI options, notifications, backups and Dhan token, with
+version history.
 
 Every change goes to the config bot. It validates the change (listing every problem at once), saves it
 as a new version and tells the other bots, so most changes apply without a restart.
@@ -10,8 +10,11 @@ import time
 import streamlit as st
 
 from dhanbot.dhan.endpoints import SEGMENT_TO_CODE
+from tradingbots.bots.backup import archive as backups
+from tradingbots.core import topics
 from tradingbots.core.settings import NOTIFY_INFO_KEYS
 from tradingbots.dashboard import data, ui
+from tradingbots.dashboard import theme as T
 
 cli = data.client()
 settings, version = cli.settings()
@@ -23,8 +26,8 @@ def save(patch: dict, note: str) -> None:
     ui.result(cli.command("config", "update", {"patch": patch, "author": "dashboard", "note": note}), "Saved.")
 
 
-tab_p, tab_w, tab_s, tab_a, tab_n, tab_t, tab_h = st.tabs(["Platform", "Watchlist", "Schedules", "AI",
-                                                           "Notifications", "Dhan token", "History"])
+tab_p, tab_w, tab_s, tab_a, tab_n, tab_b, tab_t, tab_h = st.tabs(["Platform", "Watchlist", "Schedules", "AI",
+                                                                  "Notifications", "Backups", "Dhan token", "History"])
 
 with tab_p:
     st.write("Where market data comes from (and where the trading engine trades).")
@@ -168,6 +171,55 @@ with tab_n:
             "`SMTP_PASSWORD` and `EMAIL_TO` (comma separated). For Gmail use `smtp.gmail.com` and an "
             "[app password](https://myaccount.google.com/apppasswords), not your normal password.\n\n"
             "Then press **Send a test message** above, or run `bots notify test`.")
+
+with tab_b:
+    bk = settings.backup
+    st.write("A daily archive of `config/` and the data folder (tables, every bot's database, reports). Never `.env`, "
+             "the message bus or access tokens. Each archive is checked against its checksums before it is kept.")
+    stat = cli.kv(topics.KV_BACKUP) or {}
+    last = stat.get("last") or {}
+    found = backups.list_backups(cli.paths.resolve(bk.dir))
+    c = st.columns(3)
+    if last.get("saved") is False:
+        c[0].metric("Last backup", "failed", last.get("time"), delta_color="off", delta_arrow="off")
+        st.error(f"The last backup failed: {last.get('error')}")
+    else:
+        newest = found[0] if found else {}
+        c[0].metric("Last backup", newest.get("time", "none yet")[:16] if newest else "none yet",
+                    f"{newest['size'] / 1e6:.1f} MB · {newest.get('files') or '?'} files" if newest else None,
+                    delta_color="off", delta_arrow="off")
+    c[1].metric("Kept", T.plural(len(found), "backup"), f"{sum(f['size'] for f in found) / 1e6:.1f} MB in {bk.dir}/",
+                delta_color="off", delta_arrow="off")
+    up = (last.get("upload") or {}) if bk.rclone_remote else {}
+    c[2].metric("Off-machine copy", "on" if bk.rclone_remote else "off",
+                (("copied to " + bk.rclone_remote) if up.get("copied") else (up.get("error") or bk.rclone_remote))
+                if bk.rclone_remote else "set rclone_remote to copy each backup to the cloud",
+                delta_color="off", delta_arrow="off")
+    if st.button("Back up now", disabled=not ui.bot_running(cli, "backup"),
+                 help="the backup bot does it; or run `bots backup now` on the server"):
+        r = cli.command("backup", "run", timeout=600)
+        if r.get("done"):
+            st.success(f"Saved {r['file']} ({r['files']} files, {r['size'] / 1e6:.1f} MB), verified.")
+        else:
+            st.error(r.get("error") or "The backup failed.")
+    if found:
+        ui.table([{"Archive": f["file"], "Made": f["time"], "Size": f"{f['size'] / 1e6:.1f} MB", "Files": f["files"],
+                   "Why": f["reason"]} for f in found])
+    st.caption("To restore: stop the team, then run `bots restore <archive>` on the server. Your current files are "
+               "moved aside first, never deleted, and your access token is kept.")
+    with st.form("backup"):
+        a, b = st.columns(2)
+        on = a.toggle("Daily backups on", value=bk.enabled)
+        ticks = b.toggle("Include raw tick recordings", value=bk.include_ticks, help="data/ticks can be large")
+        at = a.text_input("Every day at (IST)", bk.at)
+        remote = b.text_input("Copy each backup to (rclone remote)", bk.rclone_remote,
+                              placeholder="e.g. gdrive:trading-bots", help="needs the rclone program, set up once with "
+                                                                           "`rclone config`")
+        kd = a.number_input("Keep the newest backup of the last N days", 1, 365, bk.keep_daily)
+        kw = b.number_input("... and of the last N weeks", 0, 104, bk.keep_weekly)
+        if st.form_submit_button("Save backup settings", type="primary"):
+            save({"backup": {"enabled": on, "include_ticks": ticks, "at": at.strip(), "rclone_remote": remote.strip(),
+                             "keep_daily": int(kd), "keep_weekly": int(kw)}}, "backups")
 
 with tab_t:
     st.write("The config bot is the only bot that logs in to Dhan; it shares the token with the others.")

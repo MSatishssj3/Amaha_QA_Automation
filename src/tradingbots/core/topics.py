@@ -56,6 +56,7 @@ KV_BUDGET_USAGE = "budget:usage"
 KV_BUDGET_EXTERNAL = "budget:external"
 KV_EXEC_STATUS = "exec:status"
 KV_SIM = "sim:server"  # {endpoints..., client_id, token} published by the simulated-market server
+KV_BACKUP = "backup:status"  # {last: {saved, file, size, files, verified, upload, error}, count, total_size, dir}
 
 
 def kv_heartbeat(bot: str) -> str:

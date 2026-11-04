@@ -49,6 +49,7 @@ Bots talk only through the bus: **events** (publish/subscribe, at-least-once; ev
 | `budget:external` | `KV_BUDGET_EXTERNAL` |  |
 | `exec:status` | `KV_EXEC_STATUS` |  |
 | `sim:server` | `KV_SIM` | {endpoints..., client_id, token} published by the simulated-market server |
+| `backup:status` | `KV_BACKUP` | {last: {saved, file, size, files, verified, upload, error}, count, total_size, dir} |
 | `hb:<bot>` | `kv_heartbeat(bot)` | each bot's heartbeat: status, counters, last error, details |
 | `supervisor:status` | `supervisor.KV_SUPERVISOR` | every process the supervisor runs |
 
@@ -70,4 +71,5 @@ Send with `bus.request("cmd.<bot>.<action>", data)`; the reply always has `ok`. 
 | ai_analyst | `deep_dive`, `report`, `reports`, `run`, `status`, `test` |
 | execution | `control`, `status` |
 | notifier | `status`, `summary`, `test` |
+| backup | `list`, `run`, `status` |
 | supervisor | `restart`, `status` |

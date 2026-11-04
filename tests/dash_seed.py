@@ -137,7 +137,7 @@ def seed(base: Path, today: date) -> None:
                                                  "guard": {"turnover_inr": 41200.0, "reserved_inr": 0.0,
                                                            "policy_problem": ""}, "cid_prefix": "DB"})
         for name in ("config", "market_data", "tables", "history", "money", "budget", "ai_analyst", "execution",
-                     "notifier"):
+                     "notifier", "backup"):
             await bus.kv_set(topics.kv_heartbeat(name), {"bot": name, "status": "ok", "ts": time.time(),
                                                          "counters": {"errors": 0}, "last_error": "",
                                                          "details": {"spent_today_usd": 0.1164, "budget_usd": 1.0,
@@ -154,6 +154,9 @@ def seed(base: Path, today: date) -> None:
         await bus.close()
 
     asyncio.run(kv())
+    from tradingbots.bots.backup import archive as AR
+
+    AR.create_backup(base / "config", base / "data", base / "backups", meta={"reason": "daily"})
 
 
 def seed_journal(st: TableStore, today: date, days: list[date]) -> None:
@@ -270,6 +273,8 @@ def replies(today: str) -> dict[str, dict]:
             {"id": 1, "platform": "simulated", "symbol": "WIPRO", "qty": 15, "buy_date": "2016-03-01", "price": 410.0,
              "fmv_2018": 560.0, "note": "from the old broker"}]},
         topics.cmd("tax", "add_lot"): {"ok": True, "added": True, "id": 2},
+        topics.cmd("backup", "run"): {"ok": True, "done": True, "saved": True, "file": "trading-bots-20261105-101500.tar.gz",
+                                      "files": 31, "size": 2_400_000, "verified": True},
         topics.cmd("notifier", "status"): {"ok": True, "telegram": "on", "email": "off", "problems": [
             "email: set SMTP_HOST, SMTP_USER, SMTP_PASSWORD and EMAIL_TO in .env (see .env.example)"],
             "why": {"email": "email: set SMTP_HOST, SMTP_USER, SMTP_PASSWORD and EMAIL_TO in .env (see .env.example)"},
