@@ -106,6 +106,8 @@ class ExecutionCfg:
     squareoff_reprice_s: float = 2.0
     squareoff_max_reprices: int = 5
     squareoff_market_fallback: bool = True
+    flatten_on_shutdown: bool = True  # exit INTRADAY bot positions if the bot is stopped mid-session
+    keep_warm_s: float = 20.0  # ping the REST API this often so order connections stay hot
 
 
 @dataclass(frozen=True)

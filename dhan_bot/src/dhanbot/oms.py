@@ -42,6 +42,7 @@ MAX_MODIFICATIONS = 25
 _B36 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 _EVENT_FOR = {
     OrderStatus.OPEN: "ack",
+    OrderStatus.FILLED: "filled",  # completely filled (individual "fill" events precede it)
     OrderStatus.CANCELLED: "cancelled",
     OrderStatus.REJECTED: "rejected",
     OrderStatus.EXPIRED: "expired",
@@ -184,6 +185,9 @@ class OrderManager:
             return
         order.status = OrderStatus.SENT
         order.sent_ns = time.perf_counter_ns()
+        t_frame = order.meta.get("t_frame")
+        if t_frame and self.latency is not None:
+            self.latency.record("tick_to_send", order.sent_ns - t_frame)
         try:
             res = await self.broker.place(order)
         except Exception as e:  # defensive: a broker bug must not lose the order state

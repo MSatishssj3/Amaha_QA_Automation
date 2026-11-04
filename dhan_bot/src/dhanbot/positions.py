@@ -177,13 +177,12 @@ class PositionBook:
         return [p.to_dict() for p in self.positions.values()]
 
     # ---- broker reconciliation ----------------------------------------------------------------
-    def reconcile(self, rows: list[dict], resolve, adopt: bool = True, only_keys: set | None = None) -> list[str]:
+    def diff(self, rows: list[dict], resolve, only_keys: set | None = None) -> list["Drift"]:
         """Compare with ``GET /positions`` rows. ``resolve(segment, security_id) -> Instrument | None``.
 
-        Returns human-readable drift messages. With ``adopt`` the broker's net qty and cost price win.
         ``only_keys`` limits the check to (feed_code, security_id, product) keys the bot trades.
         """
-        drift: list[str] = []
+        out: list[Drift] = []
         seen: set[tuple[int, int, str]] = set()
         for row in rows or []:
             try:
@@ -203,21 +202,38 @@ class PositionBook:
             pos = self.get(inst, product)
             local = pos.qty if pos else 0
             if local != net:
-                drift.append(f"{inst.trading_symbol} {product.value}: bot={local} broker={net}")
-                if adopt:
-                    pos = pos or self.get(inst, product, create=True)
-                    cost = float(row.get("costPrice") or row.get("buyAvg" if net > 0 else "sellAvg") or 0)
-                    pos.qty = net  # type: ignore[union-attr]
-                    pos.avg_paise = cost * 100 if net else 0.0  # type: ignore[union-attr]
+                cost = float(row.get("costPrice") or row.get("buyAvg" if net > 0 else "sellAvg") or 0)
+                out.append(Drift(key, inst, product, local, net, cost))
         for key, pos in self.positions.items():
             if pos.qty and key not in seen and (only_keys is None or key in only_keys):
-                drift.append(f"{pos.inst.trading_symbol} {pos.product.value}: bot={pos.qty} broker=0")
-                if adopt:
-                    pos.qty = 0
-                    pos.avg_paise = 0.0
-        if drift:
-            log.warning("position drift vs broker: %s", "; ".join(drift))
-        return drift
+                out.append(Drift(key, pos.inst, pos.product, pos.qty, 0, 0.0))
+        return out
+
+    def adopt(self, d: "Drift") -> None:
+        pos = self.get(d.inst, d.product, create=True)
+        pos.qty = d.broker  # type: ignore[union-attr]
+        pos.avg_paise = d.cost * 100 if d.broker else 0.0  # type: ignore[union-attr]
+
+    def reconcile(self, rows: list[dict], resolve, adopt: bool = True, only_keys: set | None = None) -> list[str]:
+        """Diff and (optionally) adopt immediately. Returns human-readable drift messages."""
+        drifts = self.diff(rows, resolve, only_keys)
+        msgs = [f"{d.inst.trading_symbol} {d.product.value}: bot={d.local} broker={d.broker}" for d in drifts]
+        if adopt:
+            for d in drifts:
+                self.adopt(d)
+        if msgs:
+            log.warning("position drift vs broker: %s", "; ".join(msgs))
+        return msgs
+
+
+@dataclass(slots=True)
+class Drift:
+    key: tuple[int, int, str]
+    inst: Instrument
+    product: Product
+    local: int
+    broker: int
+    cost: float
 
 
 def broker_pnl_inr(rows: list[dict]) -> float:
