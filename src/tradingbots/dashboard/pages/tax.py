@@ -55,20 +55,21 @@ k[3].metric("Intraday + F&O income", T.inr(biz, signed=True),
 opens = cli.table("tax_open_lots")
 missing = opens.filter(pl.col("buy_date").is_null()) if not opens.is_empty() else opens
 unmatched = lots.filter(pl.col("category") == "unmatched") if not lots.is_empty() else lots
-if unmatched.height or missing.height:
-    st.warning(f"Needs your input: {T.plural(unmatched.height, 'sale')} without a purchase and "
-               f"{T.plural(missing.height, 'holding')} without a purchase date. Add them under **Needs your input** "
-               "below; until then they are left out of the estimate.")
+needs = [x for x in (f"{T.plural(unmatched.height, 'sale')} without a purchase" if unmatched.height else "",
+                     f"{T.plural(missing.height, 'holding')} without a purchase date" if missing.height else "") if x]
+if needs:
+    st.warning(f"Needs your input: {' and '.join(needs)}. Add the purchases under **Needs your input** below; "
+               "until then they are left out of the estimate.")
 
 st.subheader("By category")
 order = ["intraday", "fno", "stcg", "ltcg", "total"]
-ui.table([{"Category": r["label"], "Sales matched": r["matches"], "Gains": T.inr(r["gains"]),
-           "Losses": T.inr(r["losses"]), "Net": T.inr(r["net"], signed=True),
+ui.table([{"Category": r["label"], "Sales": r["matches"], "Net": T.inr(r["net"], signed=True),
            "Set-off": T.inr(r["set_off"], signed=True) if r["set_off"] else "-",
            "After set-off": T.inr(r["after_set_off"], signed=True), "Exempt": T.inr(r["exemption"]) if r["exemption"]
            else "-", "Taxable": T.inr(r["taxable"]), "Rate": f"{r['rate_pct']:g}%" if r["rate_pct"] is not None else "",
-           "Estimated tax": T.inr(r["est_tax"]), "Loss left over": T.inr(r["carry_forward"]) if r["carry_forward"]
+           "Est. tax": T.inr(r["est_tax"]), "Loss left over": T.inr(r["carry_forward"]) if r["carry_forward"]
            else "-"} for c in order if (r := rows.get(c))])
+st.caption("Net = gains + losses after deductible charges. Gains and losses per category are in the CSV summary.")
 if rows:
     st.caption(f"Set-off: a short-term loss also reduces long-term gains; an F&O loss reduces intraday, short- and "
                f"long-term gains (highest rate first); an intraday loss only intraday gains. A loss left over can be "
