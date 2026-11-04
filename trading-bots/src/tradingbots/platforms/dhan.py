@@ -8,6 +8,7 @@ import logging
 import time
 from datetime import date
 from pathlib import Path
+from typing import Callable
 
 from dhanbot.clock import LttNormalizer, RealClock
 from dhanbot.config import load_config
@@ -109,11 +110,14 @@ class DhanPlatform(Platform):
 
     # ---- live data -------------------------------------------------------------------------------------
     def stream(self, instruments: list[tuple[WatchItem, Instrument]], on_tick: TickCallback,
-               on_prev_close: PrevCloseCallback, on_event: EventCallback) -> Stream:
+               on_prev_close: PrevCloseCallback, on_event: EventCallback, *,
+               on_raw: Callable[[bytes], None] | None = None) -> Stream:
         by_key = {inst.key: inst for _, inst in instruments}
         ltt = self.ltt
 
         def on_frame(data: bytes) -> None:
+            if on_raw is not None:
+                on_raw(data)
             for p in parse_frame(data):
                 cls = p.__class__
                 if cls is Tick:

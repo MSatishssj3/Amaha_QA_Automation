@@ -9,6 +9,7 @@
     bots status                   health of every bot
     bots tables list|show|export  look at the tables
     bots ai test                  one tiny real Claude call to check the API key (a fraction of a cent)
+    bots notify test|summary      send a test message (Telegram + email) or today's summary now
     bots config get|set|history|rollback
 
 ``--dir`` points at the project folder (default: current directory).
@@ -328,8 +329,11 @@ def _demo_instruments() -> str:
     return out
 
 
+NOTIFY_ENV = ("TELEGRAM_", "SMTP_", "EMAIL_")
+
+
 def cmd_demo(base: Path, speed: float, start_hhmm: str, use_ai: bool, no_dashboard: bool, minutes: float | None,
-             reset: bool, port: int, password: str | None) -> int:
+             reset: bool, port: int, password: str | None, notify: bool = False) -> int:
     project_env = load_env(Path.cwd())
     if reset and base.exists():
         shutil.rmtree(base)
@@ -349,11 +353,14 @@ def cmd_demo(base: Path, speed: float, start_hhmm: str, use_ai: bool, no_dashboa
                        "per_stock_daily_limit_inr": 50000, "max_trades_per_day": 12, "max_trades_per_stock": 5,
                        "max_daily_loss_inr": 3000},
             "execution": {"enabled": True, "dhanbot_config": "config/dhanbot.toml"},
+            "notify": {"enabled": notify, "quiet_hours": []},
             "dashboard": {"port": port, "refresh_s": 2.0}}
     write_settings_file(base / "config" / "settings.toml", parse_settings(demo))
     env_lines = []
     if ai_key:
         env_lines.append(f"ANTHROPIC_API_KEY={ai_key}")
+    if notify:  # your Telegram / email from the project's .env, so the demo's alerts reach your phone
+        env_lines += [f"{k}={v}" for k, v in project_env.items() if k.startswith(NOTIFY_ENV) and v]
     shown = password or project_env.get("DASHBOARD_DEMO_PASSWORD") or secrets.token_urlsafe(9)
     from .dashboard.auth import hash_password
 
@@ -373,6 +380,8 @@ def cmd_demo(base: Path, speed: float, start_hhmm: str, use_ai: bool, no_dashboa
     _p(f"Demo in {base}: simulated market, {d:%a %d %b} from {start_hhmm} IST at {speed:g}x speed "
        f"(a trading day takes about {375 / speed:.0f} minutes).")
     _p("The trading engine runs the DEMO strategy on the simulated exchange - no real money is involved.")
+    _p("Notifications: " + ("on - alerts and the summary go to your Telegram / email from .env" if notify else
+                            "off (add --notify to send the demo's alerts to the Telegram / email in your .env)"))
     _p("AI reports: " + ("Claude (real API calls, capped at $0.75 for the demo)" if ai_key else
                          "rule-based demo stub (run `bots demo --ai` with ANTHROPIC_API_KEY to use Claude)"))
     if not no_dashboard:
@@ -480,6 +489,43 @@ async def _direct_ping(base: Path, s: Settings) -> dict:
             "seconds": round(res.seconds, 2)}
 
 
+def cmd_notify(base: Path, action: str) -> int:
+    """Through the notifier bot when it runs (so its counters and settings apply), else straight from .env."""
+    s = _settings(base)
+
+    async def via_bot(bus):
+        hb = await bus.kv_get(topics.kv_heartbeat("notifier"))
+        if hb and time.time() - float(hb.get("ts") or 0) < 30:
+            return await bus.request(topics.cmd("notifier", action), {}, timeout=45)
+        return None
+
+    try:
+        r = asyncio.run(_with_bus(base, via_bot))
+    except BusTimeout:
+        _p("The notifier bot did not answer.")
+        return 1
+    if action == "summary":
+        if r is None:
+            _p("The daily summary is built from the running team: start it with `bots run --all` first.")
+            return 1
+        _p(r.get("text") or r)
+        _p(f"\nsent to Telegram: {'yes' if r.get('telegram') else 'no'} · email: {'yes' if r.get('email') else 'no'}")
+        return 0
+    if r is None:
+        r = asyncio.run(_direct_notify_test(base, s))
+    for ch in ("telegram", "email"):
+        _p(f"{ch:<9} {r.get(ch)}")
+    return 0 if any(r.get(ch) == "sent" for ch in ("telegram", "email")) and \
+        not any(str(r.get(ch)).startswith("failed") for ch in ("telegram", "email")) else 1
+
+
+async def _direct_notify_test(base: Path, s: Settings) -> dict:
+    from .bots.notifier.channels import open_channels, send_tests
+
+    tg, em, why = open_channels(load_env(base), s.notify, {})
+    return await send_tests(tg, em, why)
+
+
 def _parse_value(raw: str):
     try:
         return tomllib.loads(f"v = {raw}")["v"]
@@ -576,6 +622,7 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("--port", type=int, default=8501)
     s.add_argument("--demo-dir", default=".demo", help="where the demo keeps its files (default .demo)")
     s.add_argument("--password", default=None, help="dashboard password for the demo (default: random)")
+    s.add_argument("--notify", action="store_true", help="send the demo's alerts to your Telegram / email (.env)")
     s = sub.add_parser("run", help="run the team (--all) or one bot")
     s.add_argument("target", nargs="?", help="a bot name or 'dashboard'")
     s.add_argument("--all", action="store_true", help="every bot plus the dashboard, supervised")
@@ -588,6 +635,8 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("--out", default=None)
     s = sub.add_parser("ai", help="AI analyst tools")
     s.add_argument("action", choices=["test"])
+    s = sub.add_parser("notify", help="Telegram and email notifications")
+    s.add_argument("action", choices=["test", "summary"])
     s = sub.add_parser("config", help="settings from the command line")
     s.add_argument("action", choices=["get", "set", "history", "rollback"])
     s.add_argument("args", nargs="*")
@@ -601,7 +650,7 @@ def main(argv: list[str] | None = None) -> None:
         code = cmd_check(base, ns.login)
     elif ns.cmd == "demo":
         code = cmd_demo((base / ns.demo_dir).resolve(), ns.speed, ns.start, ns.ai, ns.no_dashboard, ns.minutes,
-                        not ns.keep, ns.port, ns.password)
+                        not ns.keep, ns.port, ns.password, ns.notify)
     elif ns.cmd == "run":
         code = cmd_run(base, ns.target, ns.all, ns.no_dashboard)
     elif ns.cmd == "status":
@@ -610,6 +659,8 @@ def main(argv: list[str] | None = None) -> None:
         code = cmd_tables(base, ns.action, ns.name, ns.limit, ns.out)
     elif ns.cmd == "ai":
         code = cmd_ai_test(base)
+    elif ns.cmd == "notify":
+        code = cmd_notify(base, ns.action)
     else:
         code = cmd_config(base, ns.action, ns.args)
     sys.exit(code)

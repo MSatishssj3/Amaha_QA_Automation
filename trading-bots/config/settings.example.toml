@@ -100,6 +100,18 @@ enabled = false
 dhanbot_config = "config/dhanbot.toml"
 live = false                   # real orders need this AND mode = "live" in the dhan_bot config
 
+[notify]                       # Telegram + email; credentials in .env (TELEGRAM_*, SMTP_*, EMAIL_*)
+enabled = true
+telegram = true                # instant alerts + commands from your chat (/status, /budget, /pause ...)
+email = true                   # the daily summary, plus alerts at email_min_level and above
+min_level = "WARNING"          # Telegram gets alerts at this level and above ...
+info_keys = ["exec-started", "exec-day-report", "budget-summary", "ai-report", "ai-deep-dive"]  # ... + these INFO
+dedupe_minutes = 10.0          # the same alert at most once per 10 minutes
+quiet_hours = ["22:00", "07:00"]  # IST; only ERROR alerts in this window ([] = never quiet)
+daily_summary_at = "15:50"     # IST, trading days
+email_min_level = "ERROR"
+commands = true                # /flatten and /kill always need /confirm
+
 [dashboard]
 address = "127.0.0.1"          # keep it local; use an SSH tunnel to reach it on a server
 port = 8501

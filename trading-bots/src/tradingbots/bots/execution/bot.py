@@ -346,7 +346,8 @@ class ExecutionBot(Bot):
                 text = a.text
                 if self.exec_mode == "simulated-exchange":  # the engine says [live]: it trades with the simulated exchange
                     text = text.replace("[live]", "[simulated exchange]")
-                await self.alert(f"[engine] {text}", a.level if a.level in ("INFO", "WARNING", "ERROR") else "WARNING")
+                await self.alert(f"[engine] {text}", a.level if a.level in ("INFO", "WARNING", "ERROR") else "WARNING",
+                                 key="exec-day-report" if a.text.startswith("Day report") else "")
 
     async def publish_state(self) -> None:
         e, now = self.engine, self.clock.time()

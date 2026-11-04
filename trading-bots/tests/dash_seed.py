@@ -134,7 +134,8 @@ def seed(base: Path, today: date) -> None:
                                                  "charges": 58.2, "open_positions": 1, "working_orders": 0,
                                                  "guard": {"turnover_inr": 41200.0, "reserved_inr": 0.0,
                                                            "policy_problem": ""}, "cid_prefix": "DB"})
-        for name in ("config", "market_data", "tables", "history", "money", "budget", "ai_analyst", "execution"):
+        for name in ("config", "market_data", "tables", "history", "money", "budget", "ai_analyst", "execution",
+                     "notifier"):
             await bus.kv_set(topics.kv_heartbeat(name), {"bot": name, "status": "ok", "ts": time.time(),
                                                          "counters": {"errors": 0}, "last_error": "",
                                                          "details": {"spent_today_usd": 0.1164, "budget_usd": 1.0,
@@ -214,4 +215,12 @@ def replies(today: str) -> dict[str, dict]:
                                          "restart_required": False, "errors": []},
         topics.cmd("execution", "control"): {"ok": True, "done": True, "result": {"state": "PAUSED"}},
         topics.cmd("history", "refresh"): {"ok": True, "refreshed": 3},
+        topics.cmd("notifier", "status"): {"ok": True, "telegram": "on", "email": "off", "problems": [
+            "email: set SMTP_HOST, SMTP_USER, SMTP_PASSWORD and EMAIL_TO in .env (see .env.example)"],
+            "why": {"email": "email: set SMTP_HOST, SMTP_USER, SMTP_PASSWORD and EMAIL_TO in .env (see .env.example)"},
+            "sent": {"telegram": 5, "email": 0, "suppressed": 2, "failed": 0}},
+        topics.cmd("notifier", "test"): {"ok": True, "telegram": "sent",
+                                         "email": "off - email: set SMTP_HOST, SMTP_USER, SMTP_PASSWORD and EMAIL_TO"},
+        topics.cmd("notifier", "summary"): {"ok": True, "sent": True, "telegram": True, "email": False,
+                                            "text": "📊 Daily summary Thu 05 Nov 2026\nAlerts: 1 warning, 0 errors"},
     }
