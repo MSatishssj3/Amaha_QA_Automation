@@ -1,0 +1,36 @@
+# /etc/systemd/system/dhanbot.service
+# Runs one trading session. Started by dhanbot.timer on weekdays; the bot exits by itself at the
+# session end (and immediately on holidays). See deploy/vps_setup.md.
+#
+# PAPER by default. For real orders: set mode = "live" in config.toml AND add --live below.
+
+[Unit]
+Description=dhanbot trading session
+Wants=network-online.target
+After=network-online.target time-sync.target
+
+[Service]
+Type=simple
+User=dhanbot
+Group=dhanbot
+WorkingDirectory=/home/dhanbot/bot
+ExecStart=/home/dhanbot/bot/.venv/bin/dhanbot run --config /home/dhanbot/bot/config.toml
+# ExecStart=/home/dhanbot/bot/.venv/bin/dhanbot run --live --config /home/dhanbot/bot/config.toml
+Environment=PYTHONUNBUFFERED=1
+# SIGTERM -> graceful shutdown (cancel entries, flatten intraday positions if configured, write report)
+KillSignal=SIGTERM
+TimeoutStopSec=60
+Restart=on-failure
+RestartSec=5
+# Scheduling: run slightly ahead of other processes; optionally pin to one core.
+Nice=-5
+# CPUAffinity=1
+LimitNOFILE=65536
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=false
+
+[Install]
+WantedBy=multi-user.target

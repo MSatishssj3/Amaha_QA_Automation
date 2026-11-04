@@ -41,10 +41,10 @@ class Broker(ABC):
     def __init__(self) -> None:
         self.on_update: Callable[[BrokerUpdate], None] = lambda u: None
 
-    async def start(self) -> None:  # pragma: no cover - default no-op
+    async def start(self) -> None:  # noqa: B027 - optional hook, default no-op
         pass
 
-    async def stop(self) -> None:  # pragma: no cover - default no-op
+    async def stop(self) -> None:  # noqa: B027 - optional hook, default no-op
         pass
 
     @abstractmethod

@@ -1,0 +1,13 @@
+# /etc/systemd/system/dhanbot-stop.timer  -  safety net: stop the service at 15:45 IST if it is
+# somehow still running (normally the bot exits on its own at session_end = 15:30).
+# For the MCX profile change 15:45 to 23:45.
+
+[Unit]
+Description=Stop dhanbot after the session
+
+[Timer]
+OnCalendar=Mon..Fri 15:45 Asia/Kolkata
+Unit=dhanbot-stop.service
+
+[Install]
+WantedBy=timers.target

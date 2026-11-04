@@ -49,6 +49,7 @@ max_gross_exposure_inr = 300000
 max_open_positions = 3
 max_orders_per_day = 1000
 max_trades_per_instrument = 20
+max_working_entries_per_instrument = 1  # one unfilled entry order per instrument at a time
 max_consecutive_losses = 5     # -> PAUSE (no new entries)
 price_band_pct = 2.0           # reject limit prices further than this from LTP (fat-finger guard)
 price_band_options_pct = 10.0

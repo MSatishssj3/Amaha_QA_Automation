@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-import shutil
 import sqlite3
 import statistics
 import sys
@@ -24,7 +23,6 @@ from .logging_setup import register_secrets, setup_logging, shutdown_logging
 log = logging.getLogger("dhanbot")
 
 EXIT_OK, EXIT_CONFIG, EXIT_PREFLIGHT, EXIT_RUNTIME = 0, 1, 2, 3
-PKG_ROOT = Path(__file__).resolve().parents[2]
 
 
 def run_async(coro: Coroutine, use_uvloop: bool = True) -> Any:
@@ -59,29 +57,24 @@ def _logging(cfg: AppConfig | None, level: str, to_file: bool = True) -> None:
 
 
 def cmd_init(args: argparse.Namespace) -> int:
+    from importlib.resources import files
+
     target = Path(args.dir)
     target.mkdir(parents=True, exist_ok=True)
+    templates = files("dhanbot") / "templates"
     made = []
-    for src, dst in (("config.example.toml", "config.toml"), (".env.example", ".env")):
-        s = PKG_ROOT / src
+    for src, dst in (("config.example.toml", "config.toml"), ("env.example", ".env"), ("holidays.txt", "holidays.txt")):
         d = target / dst
         if d.exists():
             print(f"  {d} exists - left unchanged")
             continue
-        if not s.exists():
-            print(f"  template {s} not found (installed without the source tree?)")
-            continue
-        shutil.copyfile(s, d)
+        d.write_bytes((templates / src).read_bytes())
         if dst == ".env":
             try:
                 d.chmod(0o600)
             except OSError:
                 pass
         made.append(str(d))
-    hol = target / "holidays.txt"
-    if not hol.exists() and (PKG_ROOT / "holidays.txt").exists():
-        shutil.copyfile(PKG_ROOT / "holidays.txt", hol)
-        made.append(str(hol))
     print("created: " + (", ".join(made) if made else "nothing"))
     print("next: edit .env (DHAN_CLIENT_ID + token or PIN/TOTP), review config.toml, then run `dhanbot check`")
     return EXIT_OK

@@ -21,7 +21,7 @@ import logging
 import signal
 import time
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -227,7 +227,8 @@ class Engine:
         self.risk = RiskEngine(cfg, self.positions, self.market, self.clock, self.ks, limits=self.limits,
                                in_entry_window=self.session.in_entry_window,
                                token_seconds_left=(self.tokens.seconds_left if self.tokens else None),
-                               working_exit_qty=self._working_exit_qty)
+                               working_exit_qty=self._working_exit_qty,
+                               working_entries=self._working_entries)
         self.oms.listeners.append(self._on_order_event)
         self.oms.trade_listeners.append(self._on_trade_closed)
         self.oms.reject_listeners.append(self.risk.on_broker_reject)
@@ -419,7 +420,7 @@ class Engine:
         shift = IST_OFFSET_S if first_minutes >= 14 * 60 else 0
         alias = self._alias_of.get(inst.key, inst.trading_symbol)
         bars = [Bar(inst.key, alias, tf, float(t) - shift, float(o), float(h), float(lo), float(c), int(v or 0))
-                for t, o, h, lo, c, v in zip(ts, d["open"], d["high"], d["low"], d["close"], d.get("volume") or [0] * len(ts))]
+                for t, o, h, lo, c, v in zip(ts, d["open"], d["high"], d["low"], d["close"], d.get("volume") or [0] * len(ts), strict=False)]
         cutoff = self.clock.time()
         return [b for b in bars if b.start + tf <= cutoff]
 
@@ -458,9 +459,15 @@ class Engine:
         self._bg.append(asyncio.create_task(self._ticker(), name="ticker"))
 
     def _schedule_session(self) -> None:
-        t = self.session.today(self.clock.time())
+        now = self.clock.time()
+        t = self.session.today(now)
+        if self.mode != "replay" and now >= t["session_end"]:
+            # e.g. systemd restarted us after the close: never sit in a dead session
+            self.request_stop("session already over")
+            return
         if self.cfg.session.squareoff_enabled:
-            self.scheduler.at(t["squareoff_time"], "square-off", self._squareoff)
+            # run_if_past: a restart after square-off time must still flatten inherited intraday positions
+            self.scheduler.at(t["squareoff_time"], "square-off", self._squareoff, run_if_past=self.mode != "replay")
         self.scheduler.at(t["entry_end"], "entry window closed", lambda: self.alert("entry window closed", "INFO"))
         if self.mode != "replay":
             self.scheduler.at(t["session_end"], "session end", lambda: self.request_stop("session end"))
@@ -692,6 +699,9 @@ class Engine:
         st = self.market.of(order.instrument)
         buf = self.cfg.execution.entry_buffer_ticks if order.intent is Intent.ENTRY else self.cfg.execution.exit_buffer_ticks
         return marketable_price(order.instrument, st, order.side, buf)
+
+    def _working_entries(self, inst: Instrument) -> int:
+        return sum(1 for o in self.oms.working(inst) if o.intent is Intent.ENTRY and o.role == "entry")
 
     def _working_exit_qty(self, inst: Instrument) -> int:
         return sum(o.remaining for o in self.oms.working(inst) if o.intent is Intent.EXIT)

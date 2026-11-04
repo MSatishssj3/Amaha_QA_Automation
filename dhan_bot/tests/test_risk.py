@@ -30,9 +30,10 @@ def setup(risk=None, window=True, token_left=1e9, **cfgkw):
     limits = {EQ.key: InstrumentCfg("RELIANCE", "NSE_EQ", "RELIANCE", max_qty=100),
               OPT.key: InstrumentCfg("CE", "NSE_FNO", "NIFTY-CE", max_qty=3000),
               IDX.key: InstrumentCfg("NIFTY", "IDX_I", security_id=13, tradable=False)}
-    working = {"qty": 0}
+    working = {"qty": 0, "entries": 0}
     risk = RiskEngine(cfg, book, market, clock, ks, limits=limits, in_entry_window=lambda now: window,
-                      token_seconds_left=lambda: token_left, working_exit_qty=lambda inst: working["qty"])
+                      token_seconds_left=lambda: token_left, working_exit_qty=lambda inst: working["qty"],
+                      working_entries=lambda inst: working["entries"])
     price(market, clock, EQ, 1450.0)
     price(market, clock, OPT, 100.0)
     price(market, clock, IDX, 24000.0)
@@ -189,3 +190,11 @@ async def test_control_channel(tmp_path):
     finally:
         await srv.stop()
     assert not (await send_command(tmp_path / "control.json", "status"))["ok"]
+
+
+def test_one_working_entry_per_instrument():
+    cfg, clock, market, book, ks, risk, working = setup()
+    working["entries"] = 1
+    assert reason(risk.check(order())) == "working_entry"
+    working["entries"] = 0
+    assert risk.check(order()).ok

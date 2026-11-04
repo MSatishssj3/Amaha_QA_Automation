@@ -32,7 +32,7 @@ dhanbot = "dhanbot.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-dhanbot = ["py.typed"]
+dhanbot = ["py.typed", "templates/*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

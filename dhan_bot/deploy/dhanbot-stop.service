@@ -1,0 +1,7 @@
+# /etc/systemd/system/dhanbot-stop.service  (triggered by dhanbot-stop.timer)
+[Unit]
+Description=Stop dhanbot (graceful)
+
+[Service]
+Type=oneshot
+ExecStart=/bin/systemctl stop dhanbot.service

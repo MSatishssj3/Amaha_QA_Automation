@@ -211,3 +211,13 @@ async def test_risk_rejections_are_reported(tmp_path, store):
     report = await run_replay(make_cfg(tmp_path), frames, instruments=store, strategy=strat)
     assert [o.reason.split(":")[0] for o in strat.o] == ["max_qty", "price_band"]
     assert report["risk_rejections"] == {"max_qty": 1, "price_band": 1}
+
+
+async def test_strategy_template_loads_and_runs(tmp_path, store):
+    from dhanbot.strategy.loader import load_strategy
+
+    root = __import__("pathlib").Path(__file__).resolve().parents[1]
+    strat = load_strategy("strategies/my_strategy.py:MyStrategy", {"symbol": "RELIANCE", "timeframe": "5m"}, root)
+    frames = synth_frames(["RELIANCE"], DAY, minutes=375, step_s=5.0, seed=3)
+    report = await run_replay(make_cfg(tmp_path), frames, instruments=store, strategy=strat)
+    assert report["strategy_errors"] == 0 and report["open_positions"] == []

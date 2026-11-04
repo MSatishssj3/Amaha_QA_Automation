@@ -91,7 +91,8 @@ class RiskEngine:
                  killswitch: KillSwitch, *, limits: dict[tuple[int, int], InstrumentCfg] | None = None,
                  in_entry_window: Callable[[float], bool] | None = None,
                  token_seconds_left: Callable[[], float] | None = None,
-                 working_exit_qty: Callable[[Instrument], int] | None = None) -> None:
+                 working_exit_qty: Callable[[Instrument], int] | None = None,
+                 working_entries: Callable[[Instrument], int] | None = None) -> None:
         self.cfg = cfg
         self.r = cfg.risk
         self.positions = positions
@@ -102,6 +103,7 @@ class RiskEngine:
         self.in_entry_window = in_entry_window or (lambda now: True)
         self.token_seconds_left = token_seconds_left or (lambda: float("inf"))
         self.working_exit_qty = working_exit_qty or (lambda inst: 0)
+        self.working_entries = working_entries or (lambda inst: 0)
         self.funds_available_inr: float | None = None
         self.broker_pnl_inr: float | None = None
         self.orders_today = 0
@@ -240,6 +242,8 @@ class RiskEngine:
             return self._deny(f"duplicate: same order within {r.duplicate_window_ms}ms", record)
         if self.orders_today >= r.max_orders_per_day:
             return self._deny(f"max_orders_per_day: {r.max_orders_per_day} reached", record)
+        if self.working_entries(inst) >= r.max_working_entries_per_instrument:
+            return self._deny(f"working_entry: an entry order for {lim.alias} is already working", record)
         if self.entries_by_instrument.get(inst.key, 0) >= r.max_trades_per_instrument:
             return self._deny(f"max_trades_per_instrument: {r.max_trades_per_instrument} reached for {lim.alias}", record)
         if not record:

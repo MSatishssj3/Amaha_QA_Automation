@@ -11,7 +11,7 @@ from dhanbot.clock import RealClock
 from dhanbot.config import load_config
 from dhanbot.errors import Category, DhanError, network_error
 from dhanbot.models import (LEG_STOP, LEG_TARGET, BrokerUpdate, Instrument, Intent, OrderKind, OrderStatus,
-                            OrderType, Side)
+                            Side)
 from dhanbot.oms import OrderManager, base36
 from dhanbot.positions import PositionBook
 from dhanbot.ratelimit import OrderRateLimiter

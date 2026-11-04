@@ -119,6 +119,7 @@ class RiskCfg:
     max_open_positions: int = 3
     max_orders_per_day: int = 1000  # new order placements by the bot
     max_trades_per_instrument: int = 20
+    max_working_entries_per_instrument: int = 1  # guards against a strategy firing entries on every tick
     max_consecutive_losses: int = 5
     price_band_pct: float = 2.0
     price_band_options_pct: float = 10.0
@@ -483,7 +484,7 @@ def validate(cfg: AppConfig, live_requested: bool = False) -> list[str]:
             p.append(f"session.{k}: {e}")
     if len(parsed) == len(times):
         order = ["preflight", "feed_connect", "market_open", "entry_start", "entry_end", "squareoff_time", "session_end"]
-        for a, b in zip(order, order[1:]):
+        for a, b in zip(order, order[1:], strict=False):
             if parsed[a] > parsed[b]:
                 p.append(f"session.{a} ({times[a]}) must not be after session.{b} ({times[b]})")
 
@@ -514,7 +515,7 @@ def validate(cfg: AppConfig, live_requested: bool = False) -> list[str]:
         if getattr(r, k) <= 0:
             p.append(f"risk.{k} must be > 0")
     for k in ("max_open_positions", "max_orders_per_day", "max_trades_per_instrument", "max_consecutive_losses",
-              "reject_storm_count"):
+              "reject_storm_count", "max_working_entries_per_instrument"):
         if getattr(r, k) < 1:
             p.append(f"risk.{k} must be >= 1")
     if not 0 < r.price_band_pct <= 20 or not 0 < r.price_band_options_pct <= 50:

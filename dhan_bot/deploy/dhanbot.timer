@@ -1,0 +1,14 @@
+# /etc/systemd/system/dhanbot.timer  -  start the bot on weekdays at 08:30 IST
+# (preflight + login + instrument download, then waits for the 09:15 open).
+# For the MCX profile the same start time works; the session simply runs until 23:30.
+
+[Unit]
+Description=Start dhanbot on trading days
+
+[Timer]
+OnCalendar=Mon..Fri 08:30 Asia/Kolkata
+Persistent=false
+Unit=dhanbot.service
+
+[Install]
+WantedBy=timers.target

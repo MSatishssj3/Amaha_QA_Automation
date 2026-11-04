@@ -75,6 +75,13 @@ def endpoints_toml(mock: MockDhan) -> str:
             f'order_ws_url = "{ep.order_ws_url}"\ninstruments_csv_url = "{ep.instruments_csv_url}"\n')
 
 
+def test_templates_in_package_match_repo_copies():
+    pkg = ROOT / "src" / "dhanbot" / "templates"
+    assert (pkg / "config.example.toml").read_text() == (ROOT / "config.example.toml").read_text()
+    assert (pkg / "env.example").read_text() == (ROOT / ".env.example").read_text()
+    assert (pkg / "holidays.txt").read_text() == (ROOT / "holidays.txt").read_text()
+
+
 def test_init_creates_files(tmp_path, capsys):
     assert main(["init", str(tmp_path)]) == 0
     assert (tmp_path / "config.toml").exists() and (tmp_path / ".env").exists() and (tmp_path / "holidays.txt").exists()
@@ -95,7 +102,6 @@ def test_synth_replay_and_report(tmp_path, capsys):
     out = tmp_path / "day.bin"
     assert main(["synth", str(out), "--symbols", "RELIANCE,NIFTY", "--minutes", "120", "--date", "2026-11-04"]) == 0
     assert out.stat().st_size > 10000
-    from dhanbot.replay import synth_instrument_store  # replaying a file needs a matching instrument master
     from datetime import date
 
     csv = tmp_path / "master.csv"

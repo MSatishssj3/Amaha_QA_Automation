@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from datetime import timedelta
 
 import pytest
@@ -190,3 +189,25 @@ async def test_ip_rejected_order_halts(env):
     assert await wait_for(lambda: strat.order is not None and strat.order.status is OrderStatus.REJECTED, timeout=10)
     assert await wait_for(lambda: e.ks.state.value == "HALTED", timeout=5)
     assert "IP" in e.ks.reason
+
+
+async def test_restart_after_squareoff_time_flattens_and_after_close_exits(env):
+    clock, mock, make = env
+    s1 = FirstTick({"qty": 2})
+    e1 = make(s1, execution={"exit_mode": "none", "flatten_on_shutdown": False})
+    await e1.start()
+    assert await wait_for(lambda: s1.order is not None and s1.order.status is OrderStatus.FILLED, timeout=10)
+    await e1.shutdown()
+    # restart "after" square-off: squareoff_time already passed -> flatten immediately on start
+    past = ist_datetime(clock.time() - 5).strftime("%H:%M:%S")
+    s2 = FirstTick({"qty": 2})
+    e2 = make(s2, execution={"exit_mode": "none"}, session={"entry_end": past, "squareoff_time": past})
+    await e2.start()
+    assert await wait_for(lambda: e2.positions.qty(e2.resolve("RELIANCE")) == 0, timeout=15)
+    assert e2.squareoff_done
+    await e2.shutdown()
+    # restart after the session end -> stops by itself
+    s3 = FirstTick()
+    e3 = make(s3, session={"entry_end": past, "squareoff_time": past, "session_end": past})
+    await e3.start()
+    assert e3.stop_reason == "session already over"

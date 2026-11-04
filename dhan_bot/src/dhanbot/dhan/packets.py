@@ -205,7 +205,7 @@ def build_full(seg: int, sid: int, ltp: float, ltt: int, *, ltq: int = 0, atp: f
     head = _FULL.pack(CODE_FULL, 162, seg, sid, ltp, ltq, ltt, atp, volume, tot_sell, tot_buy, oi, oi_high, oi_low,
                       open, close, high, low)
     flat: list = []
-    for (bp, bq, bo), (ap, aq, ao) in zip(bids, asks):
+    for (bp, bq, bo), (ap, aq, ao) in zip(bids, asks, strict=True):
         flat.extend((bq, aq, bo, ao, bp, ap))
     return head + _DEPTH5.pack(*flat)
 
