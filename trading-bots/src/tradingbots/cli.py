@@ -10,6 +10,7 @@
     bots tables list|show|export  look at the tables
     bots ai test                  one tiny real Claude call to check the API key (a fraction of a cent)
     bots notify test|summary      send a test message (Telegram + email) or today's summary now
+    bots tax report [--fy 2026-27] estimated tax for a financial year + every sale as CSV for your CA
     bots config get|set|history|rollback
 
 ``--dir`` points at the project folder (default: current directory).
@@ -526,6 +527,40 @@ async def _direct_notify_test(base: Path, s: Settings) -> dict:
     return await send_tests(tg, em, why)
 
 
+def cmd_tax(base: Path, fy: str | None, out: str | None) -> int:
+    """From the tax bot's tables (no running bot needed)."""
+    from .core.fmt import inr
+    from .core.tables_io import TableReader
+
+    s = _settings(base)
+    reader = TableReader(Paths(base, s).tables)
+    summ = reader.table("tax_summary")
+    if summ.is_empty():
+        _p("No tax figures yet: the tax bot writes them from your trade history (`bots run --all`).")
+        return 1
+    fy = fy or max(summ["fy"].to_list())
+    rows = [r for r in summ.to_dicts() if r["fy"] == fy]
+    if not rows:
+        _p(f"No figures for {fy}; there are: {', '.join(sorted(set(summ['fy'].to_list())))}")
+        return 2
+    _p(f"Estimated tax, financial year {fy} (an estimate to discuss with your CA, not tax advice)\n")
+    head = ("category", "sales", "net", "after set-off", "exempt", "taxable", "rate", "est. tax")
+    table = [head] + [(r["label"], str(r["matches"]), inr(r["net"], signed=True), inr(r["after_set_off"], signed=True),
+                       inr(r["exemption"]), inr(r["taxable"]), f"{r['rate_pct']:g}%" if r["rate_pct"] is not None else "",
+                       inr(r["est_tax"])) for r in rows]
+    w = [max(len(t[i]) for t in table) for i in range(len(head))]
+    for t in table:
+        _p("  ".join(t[i].ljust(w[i]) if i == 0 else t[i].rjust(w[i]) for i in range(len(head))))
+    total = next(r for r in rows if r["category"] == "total")
+    if total.get("unmatched"):
+        _p(f"\n{total['unmatched']} sale(s) have no purchase in the trade history: add them on the dashboard's Tax page.")
+    lots = reader.query("SELECT * FROM tax_lots WHERE fy = ? ORDER BY close_date, symbol", [fy])
+    path = Path(out or f"tax-sales-{fy}.csv")
+    lots.write_csv(path)
+    _p(f"\nwrote {lots.height:,} sales to {path}")
+    return 0
+
+
 def _parse_value(raw: str):
     try:
         return tomllib.loads(f"v = {raw}")["v"]
@@ -637,6 +672,10 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("action", choices=["test"])
     s = sub.add_parser("notify", help="Telegram and email notifications")
     s.add_argument("action", choices=["test", "summary"])
+    s = sub.add_parser("tax", help="estimated tax (India) and the statement for your CA")
+    s.add_argument("action", choices=["report"])
+    s.add_argument("--fy", default=None, help="financial year, e.g. 2026-27 (default: the latest)")
+    s.add_argument("--out", default=None, help="CSV of every sale (default: tax-sales-<fy>.csv)")
     s = sub.add_parser("config", help="settings from the command line")
     s.add_argument("action", choices=["get", "set", "history", "rollback"])
     s.add_argument("args", nargs="*")
@@ -661,6 +700,8 @@ def main(argv: list[str] | None = None) -> None:
         code = cmd_ai_test(base)
     elif ns.cmd == "notify":
         code = cmd_notify(base, ns.action)
+    elif ns.cmd == "tax":
+        code = cmd_tax(base, ns.fy, ns.out)
     else:
         code = cmd_config(base, ns.action, ns.args)
     sys.exit(code)

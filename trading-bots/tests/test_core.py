@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from datetime import date
 
 import polars as pl
@@ -133,6 +134,7 @@ class EchoBot(Bot):
         self.on("t.in", self.handle)
         self.command("double", self.double)
         self.command("boom", self.boom)
+        self.command("slow", self.slow, background=True)
         self.every(0.1, self.job, name="ticker", run_at_start=True)
 
     async def handle(self, msg):
@@ -145,6 +147,10 @@ class EchoBot(Bot):
 
     async def boom(self, data):
         raise RuntimeError("nope")
+
+    async def slow(self, data):
+        await asyncio.sleep(1.0)
+        return {"slept": True}
 
     async def job(self):
         self.ticks += 1
@@ -173,6 +179,13 @@ async def test_bot_handlers_commands_jobs_heartbeat_and_isolation(tmp_path):
     assert await wait_for(lambda: bot.ticks >= 3)
     hb = await client.kv_get(topics.kv_heartbeat("echo"))
     assert hb["status"] == "ok" and hb["details"]["seen"] == 2 and hb["counters"]["commands"] == 2
+    # a background command does not hold up the bot's other messages
+    slow = asyncio.create_task(client.request(topics.cmd("echo", "slow"), {}, timeout=5))
+    await asyncio.sleep(0.1)
+    t0 = time.monotonic()
+    assert (await client.request(topics.cmd("echo", "double"), {"x": 1}))["value"] == 2
+    assert time.monotonic() - t0 < 0.8
+    assert await slow == {"ok": True, "slept": True}
     # settings change through the config KV + event
     s = Settings().model_dump(mode="json")
     s["ai"]["effort"] = "max"

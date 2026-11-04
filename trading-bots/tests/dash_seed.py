@@ -119,6 +119,7 @@ def seed(base: Path, today: date) -> None:
                             "input_tokens": 9000, "output_tokens": 4000, "cache_read_tokens": 2000,
                             "cache_write_tokens": 0, "usd": 0.1164, "inr": 9.89}], today)
     seed_journal(st, today, days)
+    seed_tax(st, today)
 
     async def kv() -> None:
         bus = make_bus("sqlite", "seed", data_dir=base / "data")
@@ -182,6 +183,27 @@ def seed_journal(st: TableStore, today: date, days: list[date]) -> None:
     st.replace("perf_breakdown", JA.breakdown_rows(trips, today))
 
 
+
+def seed_tax(st: TableStore, today: date) -> None:
+    """A delivery sale (short-term), an intraday trade, a sale with no purchase and holdings, through the real rules."""
+    from dhanbot.clock import epoch_at
+
+    from tradingbots.bots.tax import analytics as TA
+    from tradingbots.core.settings import TaxCfg
+
+    fy0 = TA.fy_range(TA.fy_of(today))[0]
+    bought = date(fy0.year - 1, 9, 2)
+    fills = [TA.TFill("simulated", "INFY", "NSE_EQ", "CNC", "b1", epoch_at(bought, "10:00"), 1, 20, 1400.0, 28.0, 12.0),
+             TA.TFill("simulated", "INFY", "NSE_EQ", "CNC", "s1", epoch_at(fy0, "11:00"), -1, 10, 1550.0, 15.5, 9.0),
+             TA.TFill("simulated", "RELIANCE", "NSE_EQ", "INTRADAY", "i1", epoch_at(fy0, "09:30"), 1, 10, 1450.0, 0, 8.0),
+             TA.TFill("simulated", "RELIANCE", "NSE_EQ", "INTRADAY", "i2", epoch_at(fy0, "10:30"), -1, 10, 1462.0, 3.6,
+                      8.0),
+             TA.TFill("simulated", "TCS", "NSE_EQ", "CNC", "s2", epoch_at(fy0, "12:00"), -1, 2, 4000.0, 8.0, 6.0)]
+    rows, held = TA.tax_lots(fills)
+    st.replace("tax_lots", rows)
+    st.replace("tax_summary", TA.summarize(rows, TaxCfg()))
+    st.replace("tax_open_lots", TA.open_lots(held, {("simulated", "INFY"): 10, ("simulated", "HDFCBANK"): 5}, today))
+
 class FakeBots:
     """Answers command requests on the bus like the bots would, and records what was asked."""
 
@@ -244,6 +266,10 @@ def replies(today: str) -> dict[str, dict]:
         topics.cmd("execution", "control"): {"ok": True, "done": True, "result": {"state": "PAUSED"}},
         topics.cmd("history", "refresh"): {"ok": True, "refreshed": 3},
         topics.cmd("journal", "annotate"): {"ok": True, "saved": True, "count": 1},
+        topics.cmd("tax", "lots"): {"ok": True, "lots": [
+            {"id": 1, "platform": "simulated", "symbol": "WIPRO", "qty": 15, "buy_date": "2016-03-01", "price": 410.0,
+             "fmv_2018": 560.0, "note": "from the old broker"}]},
+        topics.cmd("tax", "add_lot"): {"ok": True, "added": True, "id": 2},
         topics.cmd("notifier", "status"): {"ok": True, "telegram": "on", "email": "off", "problems": [
             "email: set SMTP_HOST, SMTP_USER, SMTP_PASSWORD and EMAIL_TO in .env (see .env.example)"],
             "why": {"email": "email: set SMTP_HOST, SMTP_USER, SMTP_PASSWORD and EMAIL_TO in .env (see .env.example)"},

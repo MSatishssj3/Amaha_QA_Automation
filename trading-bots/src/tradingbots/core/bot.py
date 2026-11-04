@@ -47,6 +47,7 @@ class Bot:
         self.settings_version = 0
         self._handlers: dict[str, list[Handler]] = {}
         self._commands: dict[str, CommandHandler] = {}
+        self._background: set[str] = set()  # commands that run beside the message loop (slow ones)
         self._jobs: list[tuple[str, Callable[[], Awaitable[Any]]]] = []
         self._tasks: set[asyncio.Task] = set()
         self._stop = asyncio.Event()
@@ -65,8 +66,12 @@ class Bot:
     def on(self, topic: str, fn: Handler) -> None:
         self._handlers.setdefault(topic, []).append(fn)
 
-    def command(self, action: str, fn: CommandHandler) -> None:
+    def command(self, action: str, fn: CommandHandler, *, background: bool = False) -> None:
+        """Answer ``cmd.<bot>.<action>``. A ``background`` command runs in its own task and replies when it is
+        done, so a slow one (minutes of paging through a broker API) never holds up the bot's other messages."""
         self._commands[topics.cmd(self.name, action)] = fn
+        if background:
+            self._background.add(topics.cmd(self.name, action))
 
     def every(self, seconds: float, fn: Callable[[], Awaitable[Any]], *, name: str, run_at_start: bool = False,
               session_only: bool = False, wall_clock: bool = False) -> None:
@@ -236,14 +241,10 @@ class Bot:
         if cmd is not None:
             self.counters["commands"] += 1
             corr = m.data.pop("_corr", None)
-            try:
-                result = await cmd(m.data)
-                reply = {"ok": True, **(result or {})}
-            except Exception as e:
-                self._error(f"command {m.topic}", e)
-                reply = {"ok": False, "error": f"{type(e).__name__}: {e}"}
-            if corr:
-                await self.bus.send_reply(corr, reply)
+            if m.topic in self._background:
+                self.spawn(self._answer(m, cmd, corr), name=f"command {m.topic}")
+            else:
+                await self._answer(m, cmd, corr)
             return
         for fn in self._handlers.get(m.topic, ()):
             try:
@@ -252,6 +253,21 @@ class Bot:
                 raise
             except Exception as e:
                 self._error(f"handler {m.topic}", e)
+
+    async def _answer(self, m: Message, cmd: CommandHandler, corr: str | None) -> None:
+        try:
+            result = await cmd(m.data)
+            reply = {"ok": True, **(result or {})}
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            self._error(f"command {m.topic}", e)
+            reply = {"ok": False, "error": f"{type(e).__name__}: {e}"}
+        if corr:
+            try:
+                await self.bus.send_reply(corr, reply)
+            except Exception as e:
+                self._error("command reply", e)
 
     async def _heartbeats(self) -> None:
         n = 0

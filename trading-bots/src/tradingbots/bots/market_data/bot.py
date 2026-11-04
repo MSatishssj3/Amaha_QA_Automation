@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from datetime import timedelta
+from datetime import date, timedelta
 from typing import Any
 
 from dhanbot.bars import BarAggregator, parse_timeframe
@@ -39,6 +39,7 @@ class MarketDataBot(Bot):
         self.on(topics.AUTH_TOKEN, self.on_token)
         self.command("fetch_history", self.cmd_fetch_history)
         self.command("snapshot", self.cmd_snapshot)
+        self.command("fetch_trades", self.cmd_fetch_trades, background=True)
         self.platform: Platform | None = None
         self.stream: Stream | None = None
         self.instruments: list[tuple[WatchItem, Instrument]] = []
@@ -286,6 +287,34 @@ class MarketDataBot(Bot):
 
     async def cmd_snapshot(self, data: dict) -> dict:
         return await self.snapshot(full=bool(data.get("full", True)))
+
+    async def cmd_fetch_trades(self, data: dict) -> dict:
+        """``{from, to}`` (YYYY-MM-DD): the broker's trade history, fetched in 60-day windows (paced), into the
+        ``trades`` table. The tax bot uses it for purchase dates older than the regular snapshots reach."""
+        p = self.platform
+        if p is None:
+            return {"fetched": 0, "error": "not connected to a platform yet"}
+        try:
+            start, end = date.fromisoformat(str(data["from"])), date.fromisoformat(str(data["to"]))
+        except (KeyError, ValueError) as e:
+            return {"fetched": 0, "error": f"need from and to as YYYY-MM-DD: {e}"}
+        if start > end:
+            return {"fetched": 0, "error": "from is after to"}
+        total, windows, errors, d = 0, 0, [], start
+        while d <= end:
+            w_end = min(end, d + timedelta(days=59))
+            try:
+                rows = await p.trade_history(d, w_end)
+            except PlatformError as e:
+                errors.append(f"{d}..{w_end}: {e}")
+                rows = []
+            if rows:
+                dates = sorted({str(r["date"]) for r in rows if r.get("date")})
+                await self.publish(topics.ACCOUNT_TRADES, {"platform": p.name, "as_of": self.clock.time(),
+                                                           "kind": "trade_history", "dates": dates, "rows": rows})
+            total, windows, d = total + len(rows), windows + 1, w_end + timedelta(days=1)
+            await asyncio.sleep(0.3)  # stay well inside the broker's rate limits
+        return {"fetched": total, "windows": windows, "errors": errors, "from": start.isoformat(), "to": end.isoformat()}
 
     # ---- history on request -------------------------------------------------------------------------------
     async def cmd_fetch_history(self, data: dict) -> dict:

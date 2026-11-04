@@ -104,6 +104,12 @@ async def test_market_data_against_simulated_market(tmp_path):
                              "from": "2026-01-01", "to": "2026-12-31"}, timeout=20)
         assert r["fetched"]["RELIANCE"] > 100 and "NOPE" in r["errors"]
         assert await wait_for(drain, 5) and topics.MARKET_HISTORY in seen
+        # trade history backfill for the tax bot: 60-day windows, paced, in the background
+        ft = await c.request(topics.cmd("market_data", "fetch_trades"), {"from": "2026-01-01", "to": "2026-04-30"},
+                             timeout=30)
+        assert ft["errors"] == [] and ft["windows"] == 2 and ft["fetched"] >= 0
+        bad = await c.request(topics.cmd("market_data", "fetch_trades"), {"from": "2026-05-01", "to": "2026-04-01"})
+        assert bad["error"] == "from is after to"
         # platform switch / watchlist change -> reconnect with the new list
         upd = await c.request(topics.cmd("config", "update"),
                               {"patch": {"watchlist": [{"symbol": "INFY"}, {"symbol": "TYPO123"}]}})
