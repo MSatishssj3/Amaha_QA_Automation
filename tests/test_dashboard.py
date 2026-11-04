@@ -124,3 +124,25 @@ def test_ai_page_renders_the_report(app):
     at.switch_page("pages/ai.py").run()
     assert not at.exception
     assert any("Large caps steady" in m.value for m in at.markdown)
+
+
+def test_notifications_tab_status_test_message_and_save(app):
+    _, bots = app
+    at = signed_in().run()
+    at.switch_page("pages/settings.py").run()
+    assert not at.exception, [e.value for e in at.exception]
+    vals = {m.label: m.value for m in at.metric}
+    assert vals["Telegram"] == "on" and vals["Email"] == "off"
+    assert vals["Sent since start"] == "5 Telegram · 0 email"
+    next(b for b in at.button if b.label == "Send a test message").click().run()
+    assert not at.exception
+    assert any(s.value == "telegram: sent" for s in at.success)
+    assert any(i.value.startswith("email: off - email: set SMTP_HOST") for i in at.info)
+    assert [t for t, _ in bots.seen].count(topics.cmd("notifier", "test")) == 1
+    next(t for t in at.text_input if t.label.startswith("Quiet hours")).input("23:00-06:30")
+    next(b for b in at.button if b.label == "Save notifications").click().run()
+    assert not at.exception
+    sent = [d for t, d in bots.seen if t == topics.cmd("config", "update")]
+    assert sent and sent[-1]["patch"]["notify"]["quiet_hours"] == ["23:00", "06:30"]
+    assert sent[-1]["patch"]["notify"]["info_keys"] == ["exec-started", "exec-day-report", "budget-summary",
+                                                        "ai-report", "ai-deep-dive"]

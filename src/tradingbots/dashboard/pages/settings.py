@@ -1,4 +1,5 @@
-"""Settings: the trading platform, watchlist, schedules, AI options and Dhan token, with version history.
+"""Settings: the trading platform, watchlist, schedules, AI options, notifications and Dhan token, with version
+history.
 
 Every change goes to the config bot. It validates the change (listing every problem at once), saves it
 as a new version and tells the other bots, so most changes apply without a restart.
@@ -9,6 +10,7 @@ import time
 import streamlit as st
 
 from dhanbot.dhan.endpoints import SEGMENT_TO_CODE
+from tradingbots.core.settings import NOTIFY_INFO_KEYS
 from tradingbots.dashboard import data, ui
 
 cli = data.client()
@@ -21,8 +23,8 @@ def save(patch: dict, note: str) -> None:
     ui.result(cli.command("config", "update", {"patch": patch, "author": "dashboard", "note": note}), "Saved.")
 
 
-tab_p, tab_w, tab_s, tab_a, tab_t, tab_h = st.tabs(["Platform", "Watchlist", "Schedules", "AI", "Dhan token",
-                                                    "History"])
+tab_p, tab_w, tab_s, tab_a, tab_n, tab_t, tab_h = st.tabs(["Platform", "Watchlist", "Schedules", "AI",
+                                                           "Notifications", "Dhan token", "History"])
 
 with tab_p:
     st.write("Where market data comes from (and where the trading engine trades).")
@@ -95,6 +97,77 @@ with tab_a:
                        f"(cost ${r.get('cost_usd') or 0:.5f}).")
         else:
             st.error(r.get("error") or r.get("reason") or "The test failed.")
+
+with tab_n:
+    n = settings.notify
+    st.write("Alerts and a daily summary on your phone (Telegram) and by email. Credentials live in `.env`.")
+    if ui.bot_running(cli, "notifier"):
+        ns = cli.command("notifier", "status")
+        c = st.columns(3)
+        for col, ch, label in ((c[0], "telegram", "Telegram"), (c[1], "email", "Email")):
+            on = ns.get(ch) == "on"
+            col.metric(label, "on" if on else "off", None if on else (ns.get("why") or {}).get(ch), delta_color="off",
+                       delta_arrow="off")
+        sent = ns.get("sent") or {}
+        c[2].metric("Sent since start", f"{sent.get('telegram', 0)} Telegram · {sent.get('email', 0)} email",
+                    f"{sent.get('suppressed', 0)} held back (repeats, quiet hours) · {sent.get('failed', 0)} failed",
+                    delta_color="off", delta_arrow="off")
+        b1, b2 = st.columns(2)
+        if b1.button("Send a test message", help="one message on every channel that is on"):
+            r = cli.command("notifier", "test", timeout=40)
+            if not r.get("ok"):
+                st.error(r.get("error"))
+            for ch in ("telegram", "email"):
+                v = str(r.get(ch) or "")
+                (st.success if v == "sent" else st.error if v.startswith("failed") else st.info)(f"{ch}: {v}")
+        if b2.button("Send today's summary now"):
+            r = cli.command("notifier", "summary", timeout=40)
+            if r.get("ok"):
+                st.success("Sent." if r.get("telegram") or r.get("email") else "Built, but no channel is on.")
+                st.code(r.get("text") or "", language=None)
+            else:
+                st.error(r.get("error"))
+    else:
+        st.info("The notifier bot is not running, so nothing is being sent.")
+    with st.form("notify"):
+        a, b = st.columns(2)
+        enabled = a.toggle("Notifications on", value=n.enabled)
+        commands = b.toggle("Accept Telegram commands", value=n.commands,
+                            help="/status, /pnl, /budget, /pause ... from your chat only; /flatten and /kill need /confirm")
+        tg = a.toggle("Telegram", value=n.telegram)
+        em = b.toggle("Email", value=n.email)
+        levels = ["INFO", "WARNING", "ERROR"]
+        min_level = a.selectbox("Telegram: alerts from level", levels, index=levels.index(n.min_level))
+        email_level = b.selectbox("Email: alerts from level", ["WARNING", "ERROR"],
+                                  index=["WARNING", "ERROR"].index(n.email_min_level),
+                                  help="the daily summary is always emailed")
+        keys = list(NOTIFY_INFO_KEYS) + [k for k in n.info_keys if k not in NOTIFY_INFO_KEYS]
+        info = st.multiselect("Also send these INFO messages", keys, default=n.info_keys,
+                              format_func=lambda k: NOTIFY_INFO_KEYS.get(k, k))
+        dedupe = a.number_input("Send the same alert at most once every (minutes)", 0.0, value=n.dedupe_minutes,
+                                step=5.0)
+        summary_at = b.text_input("Daily summary at (IST, trading days)", n.daily_summary_at)
+        quiet = a.text_input("Quiet hours (IST, from-to; empty = none)", "-".join(n.quiet_hours),
+                             help="only ERROR alerts are sent in this window, e.g. 22:00-07:00")
+        if st.form_submit_button("Save notifications", type="primary"):
+            q = [x.strip() for x in quiet.replace("–", "-").split("-") if x.strip()]
+            save({"notify": {"enabled": enabled, "commands": commands, "telegram": tg, "email": em,
+                             "min_level": min_level, "email_min_level": email_level, "info_keys": info,
+                             "dedupe_minutes": dedupe, "daily_summary_at": summary_at.strip(), "quiet_hours": q}},
+                 "notifications")
+    with st.expander("How to connect Telegram and email"):
+        st.markdown(
+            "**Telegram**\n"
+            "1. In Telegram, message **@BotFather**, send `/newbot` and copy the token it gives you.\n"
+            "2. Send any message to your new bot, then open "
+            "`https://api.telegram.org/bot<token>/getUpdates` and copy `chat.id`.\n"
+            "3. In `.env`: `TELEGRAM_BOT_TOKEN=...` and `TELEGRAM_CHAT_ID=...`, then restart the team.\n\n"
+            "Only one program may read a bot's messages: don't run dhan_bot's own Telegram with the same token.\n\n"
+            "**Email**\n"
+            "In `.env`: `SMTP_HOST`, `SMTP_PORT` (587 for STARTTLS, or 465 with `SMTP_SSL=true`), `SMTP_USER`, "
+            "`SMTP_PASSWORD` and `EMAIL_TO` (comma separated). For Gmail use `smtp.gmail.com` and an "
+            "[app password](https://myaccount.google.com/apppasswords), not your normal password.\n\n"
+            "Then press **Send a test message** above, or run `bots notify test`.")
 
 with tab_t:
     st.write("The config bot is the only bot that logs in to Dhan; it shares the token with the others.")

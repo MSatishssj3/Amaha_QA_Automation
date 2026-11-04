@@ -173,6 +173,44 @@ class ExecutionCfg(_Strict):
     live: bool = False  # real orders need BOTH this and mode = "live" in the dhan_bot config
 
 
+NOTIFY_INFO_KEYS = {  # INFO alerts worth a message (notify.info_keys); prefixes of the alert key
+    "exec-started": "trading engine started",
+    "exec-day-report": "trading engine's day report",
+    "budget-summary": "budget end-of-day summary",
+    "budget-changed": "daily budget limits changed",
+    "ai-report": "AI report ready",
+    "ai-deep-dive": "nightly AI deep dives done",
+}
+
+
+class NotifyCfg(_Strict):
+    """Alerts to your phone (Telegram) and by email. Credentials live in .env (see .env.example)."""
+
+    enabled: bool = True
+    telegram: bool = True  # instant alerts + commands (/status, /budget, /pause, /flatten ...)
+    email: bool = True  # the daily summary, plus alerts at email_min_level and above
+    min_level: Literal["INFO", "WARNING", "ERROR"] = "WARNING"
+    # INFO alerts that are still worth a message (alert key prefixes)
+    info_keys: list[str] = ["exec-started", "exec-day-report", "budget-summary", "ai-report", "ai-deep-dive"]
+    dedupe_minutes: float = Field(10.0, ge=0)  # the same alert is sent at most once per this many minutes
+    quiet_hours: list[str] = ["22:00", "07:00"]  # [from, to] IST: only ERROR alerts are sent; [] = never quiet
+    daily_summary_at: str = "15:50"  # trading days
+    email_min_level: Literal["WARNING", "ERROR"] = "ERROR"
+    commands: bool = True  # accept commands from your Telegram chat (only that chat)
+
+    @field_validator("daily_summary_at")
+    @classmethod
+    def _summary_time(cls, v: str) -> str:
+        return _hhmm(v)
+
+    @field_validator("quiet_hours")
+    @classmethod
+    def _quiet(cls, v: list[str]) -> list[str]:
+        if v and len(v) != 2:
+            raise ValueError("quiet_hours is [] or [from, to], e.g. [\"22:00\", \"07:00\"]")
+        return [_hhmm(x) for x in v]
+
+
 class DashboardCfg(_Strict):
     address: str = "127.0.0.1"
     port: int = Field(8501, ge=1024, le=65535)
@@ -193,6 +231,7 @@ class Settings(_Strict):
     budget: BudgetCfg = BudgetCfg()
     money: MoneyCfg = MoneyCfg()
     execution: ExecutionCfg = ExecutionCfg()
+    notify: NotifyCfg = NotifyCfg()
     dashboard: DashboardCfg = DashboardCfg()
     note: str = ""
 

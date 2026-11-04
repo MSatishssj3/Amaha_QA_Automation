@@ -66,4 +66,5 @@ Send with `bus.request("cmd.<bot>.<action>", data)`; the reply always has `ok`. 
 | budget | `history`, `status` |
 | ai_analyst | `deep_dive`, `report`, `reports`, `run`, `status`, `test` |
 | execution | `control`, `status` |
+| notifier | `status`, `summary`, `test` |
 | supervisor | `restart`, `status` |
