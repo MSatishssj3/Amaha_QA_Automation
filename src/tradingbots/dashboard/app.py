@@ -32,6 +32,7 @@ pages = [
     st.Page("pages/budget.py", title="Daily budget", icon=":material/speed:"),
     st.Page("pages/trading.py", title="Trading", icon=":material/swap_horiz:"),
     st.Page("pages/performance.py", title="Performance", icon=":material/query_stats:"),
+    st.Page("pages/tax.py", title="Tax", icon=":material/receipt_long:"),
     st.Page("pages/ai.py", title="AI insights", icon=":material/psychology:"),
     st.Page("pages/tables.py", title="Tables", icon=":material/table_view:"),
     st.Page("pages/settings.py", title="Settings", icon=":material/settings:"),

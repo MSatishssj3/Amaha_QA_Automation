@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -80,6 +81,7 @@ PAGES = [
     ("pages/budget.py", "Daily budget", ["New entries today", "Entries blocked by the budget"]),
     ("pages/trading.py", "Trading", ["Mode", "Net P&L today"]),
     ("pages/performance.py", "Performance", ["Net P&L", "Win rate", "Expectancy", "Profit factor", "Max drawdown"]),
+    ("pages/tax.py", "Tax (India)", ["Estimated tax", "Short-term gains", "Long-term gains", "Intraday + F&O income"]),
     ("pages/ai.py", "AI insights", ["Model", "Spent today"]),
     ("pages/tables.py", "Tables", []),
     ("pages/settings.py", "Settings", []),
@@ -163,3 +165,21 @@ def test_performance_page_numbers_match_the_journal(app):
     assert 0 < manual < all_time
     next(b for b in at.button if b.label == "Save tags and notes").click().run()
     assert any(i.value == "Nothing changed." for i in at.info)
+
+
+def test_tax_page_lists_what_needs_input_and_adds_a_purchase(app):
+    _, bots = app
+    at = signed_in().run()
+    at.switch_page("pages/tax.py").run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert any("1 sale without a purchase and 1 holding without a purchase date" in w.value for w in at.warning)
+    vals = {m.label: m.value for m in at.metric}
+    assert vals["Short-term gains"].startswith("+₹") and vals["Estimated tax"].startswith("₹")
+    next(t for t in at.text_input if t.label == "Stock symbol").input("TCS")
+    next(n for n in at.number_input if n.label == "Quantity").set_value(2)
+    next(d for d in at.date_input if d.label == "Bought on").set_value(date(2019, 1, 1))
+    next(n for n in at.number_input if n.label == "Price per share (₹)").set_value(1900.0)
+    next(b for b in at.button if b.label == "Add purchase").click().run()
+    assert not at.exception
+    sent = [d for t, d in bots.seen if t == topics.cmd("tax", "add_lot")]
+    assert sent == [{"symbol": "TCS", "qty": 2, "buy_date": "2019-01-01", "price": 1900.0, "fmv_2018": None, "note": ""}]

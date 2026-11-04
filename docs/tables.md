@@ -29,6 +29,9 @@ Every table is Parquet under `data/tables/<table>/` (partitioned tables use `<ke
 | [`perf_trades`](#perf_trades) | journal | - | replace | Every round trip (flat to flat) of your trades, with charges, slippage, tags and notes |
 | [`perf_summary`](#perf_summary) | journal | - | replace | Trading statistics by period and source (closed trades, net of charges) |
 | [`perf_breakdown`](#perf_breakdown) | journal | - | replace | Closed trades grouped by hour, weekday, symbol, holding time, direction, source, exit and tag |
+| [`tax_lots`](#tax_lots) | tax | - | replace | Every matched sale for the tax estimate: category, purchase and sale, charges and net |
+| [`tax_summary`](#tax_summary) | tax | - | replace | Estimated tax per financial year and category, after set-off (not tax advice) |
+| [`tax_open_lots`](#tax_open_lots) | tax | - | replace | Delivery shares held, by purchase lot, with the day each becomes long-term |
 | [`ai_costs`](#ai_costs) | ai_analyst | date | append | Every Claude API call: tokens and cost |
 
 ## bars_1m
@@ -481,6 +484,77 @@ Closed trades grouped by hour, weekday, symbol, holding time, direction, source,
 | `net_pnl` | Float64 |  |
 | `avg_net` | Float64 |  |
 | `charges` | Float64 |  |
+
+## tax_lots
+
+Every matched sale for the tax estimate: category, purchase and sale, charges and net. Owner: **tax** bot; replace writes.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `fy` | String | financial year, e.g. 2026-27 (1 Apr - 31 Mar) |
+| `category` | String | intraday / fno / stcg / ltcg / unmatched |
+| `platform` | String |  |
+| `symbol` | String |  |
+| `segment` | String |  |
+| `product` | String |  |
+| `side` | String | long: bought then sold; short: sold then bought back |
+| `qty` | Int64 |  |
+| `open_date` | Date | purchase (short: first sale) |
+| `close_date` | Date | the sale that counts |
+| `open_price` | Float64 | cost per unit (grandfathered when marked) |
+| `close_price` | Float64 |  |
+| `holding_days` | Int64 |  |
+| `open_value` | Float64 |  |
+| `close_value` | Float64 |  |
+| `gross` | Float64 | before charges |
+| `deductible_charges` | Float64 | capital gains: all but STT; business income: all charges |
+| `stt` | Float64 | securities transaction tax (not deductible from capital gains) |
+| `net` | Float64 | gross - deductible |
+| `grandfathered` | Boolean | bought before 1 Feb 2018: cost raised to the 31 Jan 2018 price |
+| `lot_source` | String | history / manual / same day |
+| `source` | String | bot / manual |
+| `remark` | String |  |
+
+## tax_summary
+
+Estimated tax per financial year and category, after set-off (not tax advice). Owner: **tax** bot; replace writes.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `fy` | String |  |
+| `category` | String | intraday / fno / stcg / ltcg / total |
+| `label` | String |  |
+| `matches` | Int64 | matched sales |
+| `gains` | Float64 |  |
+| `losses` | Float64 | negative |
+| `net` | Float64 | gains + losses |
+| `set_off` | Float64 | moved by set-off: + loss used, - gain absorbed |
+| `after_set_off` | Float64 |  |
+| `exemption` | Float64 | long-term exemption used |
+| `taxable` | Float64 |  |
+| `rate_pct` | Float64 |  |
+| `est_tax` | Float64 | with surcharge and cess |
+| `carry_forward` | Float64 | loss left over (carry-forward not tracked) |
+| `turnover` | Float64 | business income: sum of profits and losses, for the tax-audit check |
+| `deductible_charges` | Float64 |  |
+| `stt` | Float64 |  |
+| `unmatched` | Int64 | sales still needing a purchase (total row) |
+
+## tax_open_lots
+
+Delivery shares held, by purchase lot, with the day each becomes long-term. Owner: **tax** bot; replace writes.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `platform` | String |  |
+| `symbol` | String |  |
+| `qty` | Int64 |  |
+| `buy_date` | Date | empty: needs your input |
+| `buy_price` | Float64 |  |
+| `long_term_from` | Date | first day a sale is long-term |
+| `days_to_long_term` | Int64 |  |
+| `lot_source` | String | history / manual |
+| `remark` | String |  |
 
 ## ai_costs
 

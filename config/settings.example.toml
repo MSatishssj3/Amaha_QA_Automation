@@ -112,6 +112,17 @@ daily_summary_at = "15:50"     # IST, trading days
 email_min_level = "ERROR"
 commands = true                # /flatten and /kill always need /confirm
 
+[tax]                          # estimated Indian tax on your trades - an estimate for your CA, not tax advice
+enabled = true
+slab_rate_pct = 30.0           # YOUR marginal slab rate: intraday (speculative) and F&O income are taxed at it
+stcg_rate_pct = 20.0           # tax year 2026-27, listed equity with STT paid (Finance (No. 2) Act 2024;
+ltcg_rate_pct = 12.5           #   unchanged for 2026-27 under the Income-tax Act, 2025)
+ltcg_exemption_inr = 125000.0  # long-term gains exempt each financial year
+surcharge_pct = 0.0            # your surcharge rate by income; capped at 15 on these capital gains
+cess_pct = 4.0                 # health and education cess
+long_term_months = 12          # listed shares are long-term when held MORE than 12 months
+history_from = ""              # fetch trade history from YYYY-MM-DD; "" = start of the previous financial year
+
 [dashboard]
 address = "127.0.0.1"          # keep it local; use an SSH tunnel to reach it on a server
 port = 8501

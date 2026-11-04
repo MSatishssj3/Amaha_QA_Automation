@@ -60,11 +60,12 @@ Send with `bus.request("cmd.<bot>.<action>", data)`; the reply always has `ok`. 
 |---|---|
 | config | `get`, `history`, `rollback`, `set_token`, `token_status`, `update` |
 | sim_market | - |
-| market_data | `fetch_history`, `snapshot` |
+| market_data | `fetch_history`, `fetch_trades`, `snapshot` |
 | tables | `compact`, `flush`, `list` |
 | history | `recompute`, `refresh` |
 | money | `add_expense`, `delete_expense`, `list_expenses`, `recompute` |
 | journal | `annotate`, `notes`, `recompute`, `stats` |
+| tax | `add_lot`, `backfill`, `delete_lot`, `lots`, `recompute`, `status` |
 | budget | `history`, `status` |
 | ai_analyst | `deep_dive`, `report`, `reports`, `run`, `status`, `test` |
 | execution | `control`, `status` |

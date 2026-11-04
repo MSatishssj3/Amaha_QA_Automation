@@ -12,6 +12,7 @@ from __future__ import annotations
 import copy
 import os
 import tomllib
+from datetime import date
 from pathlib import Path
 from typing import Any, Literal
 
@@ -211,6 +212,33 @@ class NotifyCfg(_Strict):
         return [_hhmm(x) for x in v]
 
 
+class TaxCfg(_Strict):
+    """Estimated Indian tax on your trades: an estimate to check with your CA, not tax advice.
+
+    The defaults are the rates for tax year 2026-27 (1 Apr 2026 - 31 Mar 2027) on listed equity with STT paid:
+    short-term 20%, and long-term 12.5% above Rs 1.25 lakh a year. These were set by the Finance (No. 2) Act 2024
+    and are unchanged for 2026-27 under the Income-tax Act, 2025, checked against public tax guides in Nov 2026.
+    The surcharge on these gains is capped at 15%; cess is 4%. Intraday and F&O income is taxed at your slab rate.
+    """
+
+    enabled: bool = True
+    slab_rate_pct: float = Field(30.0, ge=0, le=50)  # your marginal slab rate, for intraday and F&O income
+    stcg_rate_pct: float = Field(20.0, ge=0, le=50)
+    ltcg_rate_pct: float = Field(12.5, ge=0, le=50)
+    ltcg_exemption_inr: float = Field(125000.0, ge=0)  # per financial year, across all your equity
+    surcharge_pct: float = Field(0.0, ge=0, le=37)  # your surcharge rate (by income); capped at 15 on capital gains
+    cess_pct: float = Field(4.0, ge=0, le=10)  # health and education cess
+    long_term_months: int = Field(12, ge=1, le=60)  # listed shares: long-term when held MORE than this
+    history_from: str = ""  # fetch the broker's trade history from this date (YYYY-MM-DD); "" = previous FY start
+
+    @field_validator("history_from")
+    @classmethod
+    def _history_from(cls, v: str) -> str:
+        if v:
+            date.fromisoformat(v)
+        return v
+
+
 class DashboardCfg(_Strict):
     address: str = "127.0.0.1"
     port: int = Field(8501, ge=1024, le=65535)
@@ -232,6 +260,7 @@ class Settings(_Strict):
     money: MoneyCfg = MoneyCfg()
     execution: ExecutionCfg = ExecutionCfg()
     notify: NotifyCfg = NotifyCfg()
+    tax: TaxCfg = TaxCfg()
     dashboard: DashboardCfg = DashboardCfg()
     note: str = ""
 
