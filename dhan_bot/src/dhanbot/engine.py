@@ -39,6 +39,7 @@ from .dhan.auth import TokenManager, write_private
 from .dhan.endpoints import MODE_CODES, Endpoints
 from .dhan.feed import FeedConnection
 from .dhan.order_ws import OrderUpdateConnection
+from .dhan import packets as P
 from .dhan.packets import OIUpdate, PrevClose, Tick, parse_frame
 from .dhan.rest import DhanRest
 from .errors import Category, PreflightError
@@ -260,6 +261,8 @@ class Engine:
             open_pos = self.positions.open_positions()
             if open_pos:
                 self._call_strategy("on_recover", self.ctx, open_pos)
+
+        self._warm_hot_path()
 
         # background services ------------------------------------------------------------------------------
         await self._start_services()
@@ -517,6 +520,28 @@ class Engine:
             self.latency.record("strategy_on_tick", dt)
             if dt > self.cfg.perf.strategy_tick_budget_us * 1000 * 20:
                 log.warning("strategy on_tick took %.0f us (budget %.0f us)", dt / 1000, self.cfg.perf.strategy_tick_budget_us)
+
+    def _warm_hot_path(self, rounds: int = 300) -> None:
+        """Run the order-building code a few hundred times with throw-away objects so CPython's
+        adaptive interpreter has specialised it before the first real order (first calls are slower)."""
+        t0 = time.perf_counter()
+        frame_full = P.build_full(1, 1, 100.0, 0, bids=[(99.95, 1, 1)] * 5, asks=[(100.05, 1, 1)] * 5)
+        frame_ticker = P.build_ticker(0, 1, 100.0, 0)
+        for inst in [i for i in self.aliases.values() if i.tradable][:5]:
+            st = self.market.of(inst)
+            for _ in range(rounds):
+                parse_frame(frame_full)
+                parse_frame(frame_ticker)
+                for side in (Side.BUY, Side.SELL):
+                    px = marketable_price(inst, st, side, self.cfg.execution.entry_buffer_ticks) or inst.tick_paise
+                    o = Order(0, inst, side, inst.lot_size, price_paise=px,
+                              product=Product(self.limits[inst.key].product) if inst.key in self.limits else Product.INTRADAY)
+                    self.risk.check(o, record=False)
+                    if isinstance(self.broker, LiveBroker):
+                        self.broker.build_body(o)
+                    self.oms.next_cid()
+        self.oms._seq -= rounds * 2 * len([i for i in self.aliases.values() if i.tradable][:5])  # give ids back
+        log.debug("hot path warmed in %.1f ms", (time.perf_counter() - t0) * 1000)
 
     def _dispatch_bar(self, bar: Bar) -> None:
         if self.strategy_enabled and (bar.key, bar.tf) in self._strategy_series:
@@ -911,6 +936,8 @@ class Engine:
             self.alert(f"market feed {kind}: {info}", level="WARNING")
 
     def _on_order_ws_event(self, kind: str, info: dict) -> None:
+        if self._shutting_down:
+            return
         if kind == "disconnected":
             self.alert("order-update socket disconnected - polling the order book every second", level="WARNING")
         elif kind == "connected":

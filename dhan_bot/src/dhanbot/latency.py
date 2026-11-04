@@ -10,6 +10,7 @@ Stages recorded by the engine / OMS:
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 
@@ -28,9 +29,10 @@ class StageStats:
 
 
 def _pct(sorted_vals: list[int], q: float) -> float:
+    """Nearest-rank percentile, in microseconds."""
     if not sorted_vals:
         return 0.0
-    i = min(len(sorted_vals) - 1, max(0, int(round(q * (len(sorted_vals) - 1)))))
+    i = min(len(sorted_vals) - 1, max(0, math.ceil(q * len(sorted_vals)) - 1))
     return sorted_vals[i] / 1000.0
 
 

@@ -1,0 +1,13 @@
+# NSE trading holidays, one YYYY-MM-DD per line ('#' starts a comment). The bot exits on these days.
+#
+# IMPORTANT: keep this file up to date from the official NSE holiday list
+# (nseindia.com -> Resources -> Exchange Communication -> Holidays). Dates that move every year
+# (Holi, Diwali, Eid, Good Friday, ...) are NOT pre-filled because they could not be verified
+# while building the bot. Weekends are always skipped automatically.
+#
+# Fixed-date national holidays (verify each year; some fall on weekends anyway):
+2026-01-26  # Republic Day
+2026-05-01  # Maharashtra Day
+2026-10-02  # Gandhi Jayanti
+2026-12-25  # Christmas
+2027-01-26  # Republic Day

@@ -92,6 +92,8 @@ class OrderManager:
         self._ttl: dict[int, object] = {}
         self._warned_status: set[str] = set()
         self.placed_today = 0
+        self._day_lo = self._day_hi = 0.0
+        self._day_str = ""
 
     # ---- creation / submission -------------------------------------------------------------------
     def create(self, instrument: Instrument, side: Side, qty: int, **kw) -> Order:
@@ -102,7 +104,13 @@ class OrderManager:
 
     def next_cid(self) -> str:
         self._seq += 1
-        return f"{self.prefix}{self.clock.now():%y%m%d}{base36(self._seq, 6)}"
+        now = self.clock.time()
+        if not self._day_lo <= now < self._day_hi:  # recompute the date part once per IST day
+            d = self.clock.now()
+            self._day_str = f"{self.prefix}{d:%y%m%d}"
+            self._day_lo = d.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+            self._day_hi = self._day_lo + 86400
+        return self._day_str + base36(self._seq, 6)
 
     def submit(self, order: Order) -> bool:
         """Send an order that already passed risk checks. Returns False if rejected locally (rate limit)."""

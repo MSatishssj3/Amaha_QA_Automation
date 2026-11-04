@@ -67,16 +67,30 @@ class JsonFormatter(logging.Formatter):
 
 
 _listener: logging.handlers.QueueListener | None = None
+_queue_handler: logging.Handler | None = None
+
+
+class _StderrHandler(logging.StreamHandler):
+    """Writes to whatever ``sys.stderr`` is *now* (survives stream swaps by test runners / daemons)."""
+
+    def __init__(self) -> None:
+        super().__init__(sys.stderr)
+
+    @property  # type: ignore[override]
+    def stream(self):
+        return sys.stderr
+
+    @stream.setter
+    def stream(self, value) -> None:
+        pass
 
 
 def setup_logging(log_dir: Path | None = None, level: str = "INFO", console: bool = True) -> None:
-    global _listener
-    if _listener is not None:
-        _listener.stop()
-        _listener = None
+    global _listener, _queue_handler
+    shutdown_logging()
     handlers: list[logging.Handler] = []
     if console:
-        h = logging.StreamHandler(sys.stderr)
+        h = _StderrHandler()
         h.setFormatter(RedactingFormatter("%(asctime)s %(levelname)-7s %(name)s: %(message)s"))
         handlers.append(h)
     if log_dir is not None:
@@ -89,7 +103,8 @@ def setup_logging(log_dir: Path | None = None, level: str = "INFO", console: boo
     root = logging.getLogger()
     for old in list(root.handlers):
         root.removeHandler(old)
-    root.addHandler(logging.handlers.QueueHandler(q))
+    _queue_handler = logging.handlers.QueueHandler(q)
+    root.addHandler(_queue_handler)
     root.setLevel(getattr(logging, level.upper(), logging.INFO))
     logging.getLogger("aiohttp.access").setLevel(logging.WARNING)
     _listener = logging.handlers.QueueListener(q, *handlers, respect_handler_level=True)
@@ -97,7 +112,16 @@ def setup_logging(log_dir: Path | None = None, level: str = "INFO", console: boo
 
 
 def shutdown_logging() -> None:
-    global _listener
+    """Flush and detach the handlers installed by ``setup_logging`` (idempotent)."""
+    global _listener, _queue_handler
+    if _queue_handler is not None:
+        logging.getLogger().removeHandler(_queue_handler)
+        _queue_handler = None
     if _listener is not None:
         _listener.stop()
+        for h in _listener.handlers:
+            try:
+                h.close()
+            except Exception:
+                pass
         _listener = None

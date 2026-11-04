@@ -15,10 +15,16 @@ EVENTS = ("preflight", "feed_connect", "market_open", "entry_start", "entry_end"
 
 
 class SessionTimes:
+    """Session times for the IST day containing a timestamp. Lookups are cached per day so the hot
+    path (entry-window checks on every order) never builds datetime objects."""
+
     def __init__(self, cfg: AppConfig, holidays: set[date] | None = None) -> None:
         self.cfg = cfg
         self.holidays = holidays or set()
         self._cache: dict[date, dict[str, float]] = {}
+        self._day_lo = self._day_hi = 0.0
+        self._day_times: dict[str, float] = {}
+        self._day_trading = False
 
     def for_day(self, day: date) -> dict[str, float]:
         t = self._cache.get(day)
@@ -27,11 +33,22 @@ class SessionTimes:
             t = self._cache[day] = {k: epoch_at(day, times[k]) for k in EVENTS}
         return t
 
+    def _roll(self, now: float) -> None:
+        day = ist_datetime(now).date()
+        self._day_lo = epoch_at(day, "00:00")
+        self._day_hi = self._day_lo + 86400
+        self._day_times = self.for_day(day)
+        self._day_trading = is_trading_day(day, self.holidays)
+
     def today(self, now: float) -> dict[str, float]:
-        return self.for_day(ist_datetime(now).date())
+        if not self._day_lo <= now < self._day_hi:
+            self._roll(now)
+        return self._day_times
 
     def is_trading_day(self, now: float) -> bool:
-        return is_trading_day(ist_datetime(now).date(), self.holidays)
+        if not self._day_lo <= now < self._day_hi:
+            self._roll(now)
+        return self._day_trading
 
     def anchor(self, epoch: float) -> float:
         """Bar anchor: the session open of the IST day containing ``epoch``."""
@@ -39,7 +56,7 @@ class SessionTimes:
 
     def in_entry_window(self, now: float) -> bool:
         t = self.today(now)
-        return self.is_trading_day(now) and t["entry_start"] <= now < t["entry_end"]
+        return self._day_trading and t["entry_start"] <= now < t["entry_end"]
 
     def market_hours(self, now: float) -> bool:
         t = self.today(now)
