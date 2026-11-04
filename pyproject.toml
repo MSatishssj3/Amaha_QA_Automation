@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tradingbots"
+version = "0.1.0"
+description = "A team of cooperating bots around the Dhan trading engine: data, tables, history, money, budget, AI analysis"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    # Dhan connectivity + trading engine, pinned to a tested commit (public repo)
+    "dhanbot @ git+https://github.com/MSatishssj3/Amaha_QA_Automation@0a16e9259f920000373cc1b6b75fd23856fdf2e6#subdirectory=dhan_bot",
+    "pydantic>=2.7",
+    "orjson>=3.10",
+    "tomli-w>=1.0",
+    "duckdb>=1.1",
+    "polars>=1.0",
+    "pyarrow>=15",
+    "streamlit>=1.40",
+    "plotly>=5.20",
+    "anthropic>=2.4,<3",
+]
+
+[project.optional-dependencies]
+redis = ["redis>=5"]
+dev = ["pytest>=8", "pytest-asyncio>=0.24", "redis>=5"]
+
+[project.scripts]
+bots = "tradingbots.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+tradingbots = ["templates/*", "py.typed"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+addopts = "-q"
