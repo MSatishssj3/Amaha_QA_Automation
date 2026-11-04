@@ -43,6 +43,12 @@ log = logging.getLogger(__name__)
 JSON_KEY: web.RequestKey[Any] = web.RequestKey("json", object)
 
 
+def datetime_ist_midnight(d: date) -> float:
+    from ..clock import epoch_at
+
+    return epoch_at(d, "00:00")
+
+
 def make_fake_jwt(client_id: str, exp: float, nonce: int = 0) -> str:
     def b64(obj: dict) -> str:
         return base64.urlsafe_b64encode(orjson.dumps(obj)).decode().rstrip("=")
@@ -302,6 +308,14 @@ class MockDhan:
         self._runner: web.AppRunner | None = None
         self._ticker_task: asyncio.Task | None = None
         self.port = 0
+        # trade book (Dhan trade-history shape, with per-trade charges), ledger vouchers, holdings
+        self.trades: list[dict] = []
+        self.ledger: list[dict] = []
+        self.holdings: list[dict] = []
+        self._trade_ids = itertools.count(1)
+        self._voucher_ids = itertools.count(1)
+        self._ledger_bal = 0.0
+        self.deposit(starting_balance, adjust_balance=False)
 
     # ---- lifecycle -----------------------------------------------------------------------
     async def start(self, host: str = "127.0.0.1", port: int = 0) -> Endpoints:
@@ -320,10 +334,13 @@ class MockDhan:
         r.add_delete("/v2/super/orders/{oid}/{leg}", self.h_cancel_super)
         r.add_get("/v2/positions", self.h_positions)
         r.add_delete("/v2/positions", self.h_exit_all)
-        r.add_get("/v2/holdings", self._const([]))
+        r.add_get("/v2/holdings", self._dyn(lambda: self.holdings))
         r.add_get("/v2/fundlimit", self.h_funds)
         r.add_post("/v2/margincalculator", self.h_margin)
-        r.add_get("/v2/trades/", self._const([]))
+        r.add_get("/v2/trades/", self.h_trades_today)
+        r.add_get("/v2/trades/{frm}/{to}/{page}", self.h_trade_history)
+        r.add_get("/v2/ledger", self.h_ledger)
+        r.add_post("/v2/charts/historical", self.h_historical)
         r.add_post("/v2/marketfeed/quote", self.h_quote)
         r.add_post("/v2/marketfeed/ltp", self.h_quote)
         r.add_post("/v2/marketfeed/ohlc", self.h_quote)
@@ -686,12 +703,14 @@ class MockDhan:
         o.updated = self.now()
         key = (o.inst.segment, o.inst.security_id, o.product)
         pos = self.positions.get(key) or self.positions.setdefault(key, MockPosition(o.inst, o.product))
+        realized_before = pos.realized
         if o.side == "BUY":
             pos.buy_qty += qty
             pos.buy_val += px * qty
         else:
             pos.sell_qty += qty
             pos.sell_val += px * qty
+        self._book_trade(o, qty, px, pos.realized - realized_before)
         self._emit(o)
         legs = self.orders.get(o.order_id, [])
         if o.leg == "ENTRY_LEG" and o.status == "TRADED":
@@ -892,6 +911,151 @@ class MockDhan:
                 self.step()
             except Exception:
                 log.exception("mock tick step failed")
+
+    # ---- trade book, ledger, holdings, daily history -------------------------------------------
+    @staticmethod
+    def charges(segment: str, product: str, side: str, qty: int, px: float, is_option: bool = False) -> dict:
+        """APPROXIMATE Indian charge schedule - for simulation only, not a statement of real fees."""
+        value = qty * px
+        fno = segment.endswith("FNO")
+        delivery = product == "CNC"
+        brokerage = 0.0 if delivery else min(20.0, value * 0.0003)
+        if fno:
+            stt = value * (0.001 if is_option else 0.0002) if side == "SELL" else 0.0
+            exch = value * (0.0003503 if is_option else 0.0000173)
+            stamp = value * (0.00003 if is_option else 0.00002) if side == "BUY" else 0.0
+        elif delivery:
+            stt = value * 0.001
+            exch = value * 0.0000297
+            stamp = value * 0.00015 if side == "BUY" else 0.0
+        else:
+            stt = value * 0.00025 if side == "SELL" else 0.0
+            exch = value * 0.0000297
+            stamp = value * 0.00003 if side == "BUY" else 0.0
+        sebi = value * 0.000001
+        gst = 0.18 * (brokerage + exch + sebi)
+        return {"brokerageCharges": round(brokerage, 2), "stt": round(stt, 2),
+                "exchangeTransactionCharges": round(exch, 2), "sebiTax": round(sebi, 2),
+                "stampDuty": round(stamp, 2), "serviceTax": round(gst, 2)}
+
+    def _book_trade(self, o: MockOrder, qty: int, px: float, realized_delta: float) -> None:
+        ts = self._ts()
+        ch = self.charges(o.inst.segment, o.product, o.side, qty, px, bool(o.inst.option_type))
+        self.trades.append({
+            "dhanClientId": self.client_id, "orderId": o.order_id, "exchangeOrderId": f"1100000{o.order_id[-8:]}",
+            "exchangeTradeId": f"T{next(self._trade_ids):08d}", "transactionType": o.side,
+            "exchangeSegment": o.inst.segment, "productType": o.product, "orderType": o.otype,
+            "tradingSymbol": o.inst.trading_symbol, "customSymbol": o.inst.name, "securityId": str(o.inst.security_id),
+            "tradedQuantity": qty, "tradedPrice": round(px, 2), "isin": f"INE{o.inst.security_id:07d}X",
+            "instrument": o.inst.instrument_type, **ch, "createTime": ts, "updateTime": ts, "exchangeTime": ts,
+            "drvExpiryDate": str(o.inst.expiry) if o.inst.expiry else "NA",
+            "drvOptionType": o.inst.option_type or "NA", "drvStrikePrice": o.inst.strike or 0.0,
+        })
+        total_charges = sum(ch.values())
+        if total_charges:
+            self.add_ledger(f"Charges {o.inst.trading_symbol} {o.side} {qty}", debit=total_charges)
+        if o.product == "CNC":
+            if o.side == "BUY":
+                self.add_ledger(f"Bought {qty} {o.inst.trading_symbol}", debit=qty * px)
+            else:
+                self.add_ledger(f"Sold {qty} {o.inst.trading_symbol}", credit=qty * px)
+        elif realized_delta:
+            if realized_delta > 0:
+                self.add_ledger(f"Intraday settlement {o.inst.trading_symbol}", credit=realized_delta)
+            else:
+                self.add_ledger(f"Intraday settlement {o.inst.trading_symbol}", debit=-realized_delta)
+
+    def add_ledger(self, narration: str, credit: float = 0.0, debit: float = 0.0, when: float | None = None) -> dict:
+        self._ledger_bal += credit - debit
+        d = ist_datetime(when if when is not None else self.now())
+        entry = {"dhanClientId": self.client_id, "narration": narration, "voucherdate": d.strftime("%b %d, %Y"),
+                 "exchange": "NSE", "voucherdesc": narration.split(" ")[0].upper(),
+                 "vouchernumber": f"V{next(self._voucher_ids):07d}", "debit": f"{debit:.2f}",
+                 "credit": f"{credit:.2f}", "runbal": f"{self._ledger_bal:.2f}"}
+        self.ledger.append(entry)
+        return entry
+
+    def deposit(self, amount: float, narration: str = "FUNDS ADDED VIA UPI", adjust_balance: bool = True) -> None:
+        if adjust_balance:
+            self.balance += amount
+        self.add_ledger(narration, credit=amount)
+
+    def withdraw(self, amount: float, narration: str = "FUNDS WITHDRAWN") -> None:
+        self.balance -= amount
+        self.add_ledger(narration, debit=amount)
+
+    def add_holding(self, symbol: str, qty: int, avg_cost: float) -> None:
+        i = self.instrument(symbol)
+        self.holdings.append({"exchange": "ALL", "tradingSymbol": i.trading_symbol, "securityId": str(i.security_id),
+                              "isin": f"INE{i.security_id:07d}X", "totalQty": qty, "dpQty": qty, "t1Qty": 0,
+                              "availableQty": qty, "collateralQty": 0, "avgCostPrice": avg_cost})
+
+    @staticmethod
+    def _parse_day(text: str):
+        return date.fromisoformat(str(text)[:10])
+
+    async def h_trades_today(self, req: web.Request) -> web.Response:
+        today = ist_datetime(self.now()).date().isoformat()
+        return self._json([t for t in self.trades if t["createTime"].startswith(today)])
+
+    async def h_trade_history(self, req: web.Request) -> web.Response:
+        try:
+            frm, to = self._parse_day(req.match_info["frm"]), self._parse_day(req.match_info["to"])
+            page = int(req.match_info["page"])
+        except ValueError:
+            return self._err(400, "DH-905", "dates must be YYYY-MM-DD and page an integer", "Input_Exception")
+        rows = [t for t in self.trades if frm <= self._parse_day(t["createTime"]) <= to]
+        return self._json(rows[page * 50:(page + 1) * 50])
+
+    async def h_ledger(self, req: web.Request) -> web.Response:
+        try:
+            frm = self._parse_day(req.query["from-date"])
+            to = self._parse_day(req.query["to-date"])
+        except (KeyError, ValueError):
+            return self._err(400, "DH-905", "from-date and to-date (YYYY-MM-DD) are required", "Input_Exception")
+        from datetime import datetime as _dt
+
+        def day(e: dict) -> date:
+            return _dt.strptime(e["voucherdate"], "%b %d, %Y").date()
+
+        return self._json([e for e in self.ledger if frm <= day(e) <= to])
+
+    async def h_historical(self, req: web.Request) -> web.Response:
+        b = req[JSON_KEY] or {}
+        i = self.find(b.get("exchangeSegment", ""), int(b.get("securityId") or 0))
+        if i is None:
+            return self._err(400, "DH-905", "invalid instrument", "Input_Exception")
+        try:
+            frm, to = self._parse_day(b["fromDate"]), self._parse_day(b["toDate"])
+        except (KeyError, ValueError):
+            return self._err(400, "DH-905", "fromDate/toDate required (YYYY-MM-DD)", "Input_Exception")
+        today = ist_datetime(self.now()).date()
+        days = []
+        d = frm
+        while d <= min(to, today - timedelta(days=1)):
+            if d.weekday() < 5:
+                days.append(d)
+            d += timedelta(days=1)
+        rng = random.Random(i.security_id * 7919 + len(days))
+        sigma = i.sigma_daily
+        drift = rng.uniform(-0.0004, 0.0008)
+        rets = [drift + sigma * rng.gauss(0, 1) for _ in days]
+        start = (i.prev_close or i.price or 100.0) / math.exp(sum(rets) or 0.0)
+        out: dict[str, list] = {"open": [], "high": [], "low": [], "close": [], "volume": [], "timestamp": []}
+        px = start
+        for d, r in zip(days, rets, strict=True):
+            op = px * math.exp(rng.gauss(0, sigma / 4))
+            cl = px * math.exp(r)
+            hi = max(op, cl) * (1 + abs(rng.gauss(0, sigma / 2)))
+            lo_ = min(op, cl) * (1 - abs(rng.gauss(0, sigma / 2)))
+            out["open"].append(round(op, 2))
+            out["high"].append(round(hi, 2))
+            out["low"].append(round(lo_, 2))
+            out["close"].append(round(cl, 2))
+            out["volume"].append(0 if i.instrument_type == "INDEX" else rng.randint(200_000, 5_000_000))
+            out["timestamp"].append(int(datetime_ist_midnight(d)))
+            px = cl
+        return self._json(out)
 
     # ---- positions / funds / misc ----------------------------------------------------------
     def _pos_json(self, p: MockPosition) -> dict:

@@ -220,6 +220,15 @@ limits.** They are only *reduce-only*: an exit can never flip or increase a posi
 **Backstop.** In live mode the bot registers Dhan's server-side **P&L exit** at 1.25× your limits,
 so Dhan squares you off even if the bot or the server dies.
 
+**Plug-in checks.** Other programs that embed the engine can add their own entry rules with
+`engine.risk.extra_checks.append(fn)`, where `fn(order, record)` returns a deny `Decision` or `None`.
+The [`trading-bots`](https://github.com/MSatishssj3/trading-bots) daily budget gatekeeper uses this.
+A check that raises an exception blocks the entry. Exits never consult plug-ins.
+
+**One engine per data directory.** The engine takes an exclusive lock on `data/engine.lock`, so a
+second copy (for example a stray `dhanbot run` next to the systemd service) refuses to start
+instead of double-trading.
+
 **Square-off.** At 15:10 (configurable) every INTRADAY position the bot opened is closed. This
 happens before Dhan's own auto square-off, which charges a fee. If the bot is restarted after
 15:10, it squares off immediately.

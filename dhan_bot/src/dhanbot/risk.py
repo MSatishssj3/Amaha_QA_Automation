@@ -104,6 +104,9 @@ class RiskEngine:
         self.token_seconds_left = token_seconds_left or (lambda: float("inf"))
         self.working_exit_qty = working_exit_qty or (lambda inst: 0)
         self.working_entries = working_entries or (lambda inst: 0)
+        # Plug-in checks for ENTRY orders, run after every built-in rule: fn(order, record) -> Decision | None.
+        # ``record`` is False for dry runs (warm-up) - a check must not reserve anything then.
+        self.extra_checks: list[Callable[[Order, bool], Decision | None]] = []
         self.funds_available_inr: float | None = None
         self.broker_pnl_inr: float | None = None
         self.orders_today = 0
@@ -246,6 +249,14 @@ class RiskEngine:
             return self._deny(f"working_entry: an entry order for {lim.alias} is already working", record)
         if self.entries_by_instrument.get(inst.key, 0) >= r.max_trades_per_instrument:
             return self._deny(f"max_trades_per_instrument: {r.max_trades_per_instrument} reached for {lim.alias}", record)
+        for fn in self.extra_checks:
+            try:
+                d = fn(order, record)
+            except Exception as e:  # a broken plug-in fails closed for entries (exits never reach here)
+                log.exception("extra risk check %r raised", fn)
+                return self._deny(f"extra_check: {type(e).__name__}: {e}", record)
+            if d is not None and not d.ok:
+                return self._deny(d.reason, record)
         if not record:
             return OK
         self._recent.append((now, inst.key, order.side.value, order.qty))

@@ -166,7 +166,16 @@ class DhanRest:
         return await self.request("GET", "/super/orders")
 
     async def get_trades(self) -> Result:
+        """Today's trade book."""
         return await self.request("GET", "/trades/")
+
+    async def get_trade_history(self, from_date: str, to_date: str, page: int = 0) -> Result:
+        """Executed trades between two dates (``YYYY-MM-DD``), with per-trade charges. Pages start at 0."""
+        return await self.request("GET", f"/trades/{from_date}/{to_date}/{page}")
+
+    async def get_ledger(self, from_date: str, to_date: str) -> Result:
+        """Account ledger (funds added / withdrawn, settlements, charges) between two dates (``YYYY-MM-DD``)."""
+        return await self.request("GET", "/ledger", params={"from-date": from_date, "to-date": to_date})
 
     # ---- portfolio / funds ---------------------------------------------------------------
     async def get_positions(self) -> Result:
@@ -194,6 +203,13 @@ class DhanRest:
         payload = {"securityId": str(security_id), "exchangeSegment": segment, "instrument": instrument,
                    "interval": interval, "oi": oi, "fromDate": from_dt, "toDate": to_dt}
         return await self._json("POST", "/charts/intraday", payload, bucket="data")
+
+    async def historical_daily(self, security_id: int, segment: str, instrument: str, from_date: str, to_date: str,
+                               expiry_code: int = 0, oi: bool = False) -> Result:
+        """Daily candles (``YYYY-MM-DD`` dates). Response: arrays open/high/low/close/volume/timestamp."""
+        payload = {"securityId": str(security_id), "exchangeSegment": segment, "instrument": instrument,
+                   "expiryCode": expiry_code, "oi": oi, "fromDate": from_date, "toDate": to_date}
+        return await self._json("POST", "/charts/historical", payload, bucket="data")
 
     # ---- trader controls -----------------------------------------------------------------
     async def killswitch(self, activate: bool) -> Result:

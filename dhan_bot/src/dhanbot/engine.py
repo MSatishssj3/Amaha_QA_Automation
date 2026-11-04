@@ -47,6 +47,7 @@ from .execution import marketable_price, sl_limit_price, user_limit_price
 from .instruments import InstrumentStore
 from .journal import Journal
 from .latency import LatencyTracker, format_stats
+from .lock import InstanceLock
 from .market_state import MarketState
 from .models import (LEG_STOP, LEG_TARGET, Bar, Instrument, Intent, Order, OrderEvent, OrderKind, OrderStatus,
                      OrderType, Product, Side, Validity)
@@ -162,6 +163,7 @@ class Engine:
         self.preflight_checks: list[Check] = []
         self._state_path: Path | None = None
         self._last_state_dump = ""
+        self._lock: InstanceLock | None = None
 
     # =============================================================================================
     # startup
@@ -173,6 +175,12 @@ class Engine:
         data_dir = cfg.data_dir
         data_dir.mkdir(parents=True, exist_ok=True)
         today = self.clock.today()
+        if self.mode != "replay":
+            # Two engines on one data directory would double-trade the same account.
+            self._lock = InstanceLock(data_dir / "engine.lock")
+            if not self._lock.acquire():
+                raise PreflightError(f"another dhanbot engine (pid {self._lock.holder_pid()}) is already running "
+                                     f"with data directory {data_dir} - stop it first")
 
         if self.mode != "replay":
             self.tokens = TokenManager(cfg, self.ep, self.clock)
@@ -1155,6 +1163,8 @@ class Engine:
             await self.rest.close()
         if self.cfg.perf.gc_freeze:
             gc.unfreeze()
+        if self._lock is not None:
+            self._lock.release()
         return report
 
     def daily_report(self) -> dict:
