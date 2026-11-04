@@ -1,0 +1,100 @@
+# dhan_bot configuration for the EXECUTION bot (your trading strategy running inside the team).
+# Copy to config/dhanbot.toml (`bots init` does this) and edit. Unknown keys are errors.
+# Times are IST, money in rupees. Full reference: dhan_bot's README / config.example.toml.
+#
+# What the execution bot changes when it loads this file:
+#   * dhan.auth is forced to "token": the config bot owns logins and renewals, so the
+#     engine never invalidates the token the other bots use.
+#   * Telegram is switched off: engine alerts go to the team's alert feed and dashboard.
+#   * mode: real orders need BOTH mode = "live" here AND execution.live = true in
+#     settings.toml. Otherwise the engine runs in paper mode.
+#   * On the "simulated" platform, orders always go to the simulated exchange and
+#     data_dir moves to data/execution/simulated, so demo data never mixes with real.
+#   * Your daily budget (settings.toml [budget]) is checked on every entry after the
+#     risk limits below. It can only make trading stricter.
+#
+# If you also run the standalone `dhanbot` service, stop it: two engines on one account
+# double-trade. Keeping data_dir pointing at the same folder makes the second engine
+# refuse to start.
+
+[mode]
+mode = "paper"                 # "paper" (simulated orders on live data) | "live" (real orders, see above)
+
+[dhan]
+expected_ip = ""               # optional: this host's static public IP; checked before live trading
+cid_prefix = "DB"              # correlationId prefix that marks orders as the engine's own
+
+[session]
+profile = "nse"                # nse: 09:15-15:30 | mcx: 09:00-23:30 (then set platform.token_valid_until = "23:59")
+entry_start = "09:15"
+entry_end = "15:00"
+squareoff_time = "15:10"
+squareoff_enabled = true
+holidays_file = "holidays.txt" # this folder's holidays.txt, shared with the other bots
+
+[feed]
+stale_after_s = 5.0
+record_ticks = false           # the market-data bot can record instead (market_data.record_raw)
+
+[execution]
+default_order_type = "LIMIT"
+entry_buffer_ticks = 2
+exit_buffer_ticks = 3
+entry_ttl_ms = 3000
+exit_mode = "super_order"      # stop-loss / target legs held at Dhan (survive a crash)
+flatten_scope = "bot"          # only touch positions this engine opened
+
+[risk]                         # the engine's own limits (the daily budget is checked on top)
+max_daily_loss_inr = 2000
+max_order_value_inr = 100000
+max_gross_exposure_inr = 300000
+max_open_positions = 3
+max_trades_per_instrument = 20
+max_consecutive_losses = 5
+price_band_pct = 2.0
+
+[charges]
+brokerage_per_order_inr = 20
+statutory_pct = 0.03
+
+[[instruments]]
+alias = "RELIANCE"
+segment = "NSE_EQ"
+trading_symbol = "RELIANCE"
+mode = "full"
+product = "INTRADAY"
+max_qty = 10
+
+[[instruments]]
+alias = "HDFCBANK"
+segment = "NSE_EQ"
+trading_symbol = "HDFCBANK"
+mode = "full"
+product = "INTRADAY"
+max_qty = 10
+
+[[instruments]]
+alias = "NIFTY"
+segment = "IDX_I"
+security_id = 13
+mode = "ticker"
+
+[strategy]
+name = "ema_cross"             # EXAMPLE ONLY. Your own: "strategies/my_strategy.py:MyStrategy" (relative to this folder)
+enabled = true
+
+[strategy.params]
+symbol = "RELIANCE"
+timeframe = "1m"
+fast = 9
+slow = 21
+qty = 1
+stop_pct = 0.5
+target_pct = 1.0
+
+[perf]
+gc_freeze = true
+
+[paths]
+data_dir = "../data/execution/dhan"
+log_dir = "../logs/execution"

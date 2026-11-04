@@ -1,0 +1,30 @@
+# secrets
+.env
+*.env
+!.env.example
+
+# runtime data (bus, tables, stores, logs, tokens)
+data/
+logs/
+*.db
+*.db-wal
+*.db-shm
+*.parquet
+
+# local settings (copy config/settings.example.toml -> config/settings.toml)
+config/settings.toml
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# `bots demo` working folder, and your personal strategy config (`bots init` creates it from the template)
+.demo/
+config/dhanbot.toml
