@@ -47,7 +47,7 @@ class ConfigBot(Bot):
     async def setup(self) -> None:
         self.store = SettingsStore(self.ctx.paths.bot("config") / "settings.db", self.ctx.paths.settings_file)
         try:
-            version, settings, changes = self.store.load_or_import()
+            version, settings, changes = self.store.load_or_import(self.ctx.bootstrap)
         except SettingsError as e:
             await self.alert(f"config/settings.toml is invalid, keeping the last good version: {e}", "ERROR")
             cur = self.store.current()
@@ -150,7 +150,7 @@ class ConfigBot(Bot):
             return
         tm = self._token_manager()
         today = self.ctx.today()
-        valid_until = epoch_at(today, "15:30") + 1800
+        valid_until = epoch_at(today, self.settings.platform.token_valid_until)
         try:
             await tm.ensure(valid_until=max(valid_until, self.clock.time() + 3600),
                             allow_login=self.settings.platform.dhan_auth == "totp")

@@ -11,7 +11,7 @@ requires-python = ">=3.11"
 license = { text = "MIT" }
 dependencies = [
     # Dhan connectivity + trading engine, pinned to a tested commit (public repo)
-    "dhanbot @ git+https://github.com/MSatishssj3/Amaha_QA_Automation@0a16e9259f920000373cc1b6b75fd23856fdf2e6#subdirectory=dhan_bot",
+    "dhanbot @ git+https://github.com/MSatishssj3/Amaha_QA_Automation@4923fee49835f7e15e01e595e257938c94bfb2e2#subdirectory=dhan_bot",
     "pydantic>=2.7",
     "orjson>=3.10",
     "tomli-w>=1.0",

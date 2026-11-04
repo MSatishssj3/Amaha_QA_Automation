@@ -56,12 +56,13 @@ class SettingsStore:
                          orjson.dumps(new.to_dict()).decode(), self._hash(self.toml_path)))
         return v, changes
 
-    def load_or_import(self) -> tuple[int, Settings, list[str]]:
-        """Startup: create v1 from the file (or defaults), or import the file if it was edited by hand."""
+    def load_or_import(self, initial: Settings | None = None) -> tuple[int, Settings, list[str]]:
+        """Startup: create v1 from the file (or ``initial``, the settings the process was started with),
+        or import the file if it was edited by hand."""
         cur = self.current()
         file_exists = self.toml_path.exists()
         if cur is None:
-            s = load_settings_file(self.toml_path) if file_exists else Settings()
+            s = load_settings_file(self.toml_path) if file_exists else (initial or Settings())
             v, changes = self.save(s, "startup", "initial settings")
             return v, s, changes
         if file_exists and self._hash(self.toml_path) != self.last_file_hash():

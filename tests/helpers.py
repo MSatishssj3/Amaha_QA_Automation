@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import itertools
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -42,3 +43,19 @@ def make_ctx(tmp: Path, bus: Bus | None = None, settings: Settings | None = None
     s = settings or make_settings(tmp)
     return BotContext(bus=bus or MemoryBus(name), paths=Paths(tmp, s), clock=clock or RealClock(), bootstrap=s,
                       calendar=MarketCalendar())
+
+
+_readers = itertools.count()
+
+
+async def read_all(bus: Bus, topic: str) -> list:
+    """Every retained message on ``topic`` so far (a fresh consumer group starting at the beginning)."""
+    group = f"test-reader-{next(_readers)}"
+    await bus.ensure_group(group, [topic], start="earliest")
+    out: list = []
+    while True:
+        msgs = await bus.consume(group, [topic], batch=500, block_s=0.05)
+        if not msgs:
+            return out
+        out.extend(msgs)
+        await bus.ack(group, msgs)

@@ -25,7 +25,7 @@ MONEY_UPDATED = "money.updated"  # {as_of, summary}
 
 BUDGET_POLICY = "budget.policy"  # BudgetPolicyMsg
 BUDGET_USAGE = "budget.usage"  # BudgetUsageMsg
-BUDGET_EXTERNAL = "budget.external"  # {date, turnover_inr, trades, per_stock} - trades not placed by the bot
+BUDGET_EXTERNAL = "budget.external"  # {date, turnover_inr, trades, per_stock, trades_by_stock} - your own trades
 
 ALERT = "alert"  # AlertMsg
 
@@ -35,7 +35,8 @@ AI_COST = "ai.cost"  # {ts, model, input_tokens, output_tokens, cache_read, cach
 EXEC_ORDER = "exec.order"  # ExecOrderMsg (every order state change from the trading engine)
 EXEC_FILL = "exec.fill"  # ExecFillMsg
 EXEC_STATE = "exec.state"  # {state, reason, mode}
-EXEC_PNL = "exec.pnl"  # {realised, unrealised, charges, net, open_positions}
+EXEC_PNL = "exec.pnl"  # {realised, unrealised, charges, net, exposure, open_positions, positions, date}
+EXEC_REJECT = "exec.reject"  # {symbol, side, qty, rule, reason, count} - entries blocked by risk / budget (throttled)
 
 BOT_HEARTBEAT = "bot.heartbeat"  # HeartbeatMsg
 
@@ -51,6 +52,7 @@ KV_TOKEN = "secret:token"  # {platform, client_id, token, expires_at, version, e
 KV_QUOTES = "market:quotes"  # {symbol: quote}
 KV_BUDGET_POLICY = "budget:policy"
 KV_BUDGET_USAGE = "budget:usage"
+KV_BUDGET_EXTERNAL = "budget:external"
 KV_EXEC_STATUS = "exec:status"
 KV_SIM = "sim:server"  # {endpoints..., client_id, token} published by the simulated-market server
 

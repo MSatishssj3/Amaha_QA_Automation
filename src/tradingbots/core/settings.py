@@ -44,6 +44,15 @@ class PlatformCfg(_Strict):
     name: Literal["simulated", "dhan"] = "simulated"
     dhan_auth: Literal["token", "totp"] = "token"
     simulated_speed: float = 1.0  # clock speed of the built-in simulated market (demo only)
+    # The config bot keeps the Dhan token valid at least until this IST time each trading day (it is the
+    # only bot that logs in or renews, so other bots never invalidate each other's tokens).
+    # Use "23:59" if your dhan_bot strategy trades the MCX evening session.
+    token_valid_until: str = "16:00"
+
+    @field_validator("token_valid_until")
+    @classmethod
+    def _valid_until(cls, v: str) -> str:
+        return _hhmm(v)
 
 
 class WatchItem(_Strict):
@@ -78,8 +87,9 @@ class ScheduleCfg(_Strict):
     ai_runs: list[str] = ["08:45", "12:30", "15:45"]
     money_interval_s: float = Field(300.0, ge=30)
     compaction: str = "23:30"
+    budget_summary: str = "15:45"  # end-of-day budget summary (alert + history)
 
-    @field_validator("history_refresh", "compaction")
+    @field_validator("history_refresh", "compaction", "budget_summary")
     @classmethod
     def _t(cls, v: str) -> str:
         return _hhmm(v)
@@ -125,7 +135,10 @@ class BudgetCfg(_Strict):
     max_daily_loss_inr: float = Field(2_000.0, ge=0)
     alert_at_pct: list[float] = [80.0, 100.0]
     count_manual_trades: bool = True  # trades you place yourself in the Dhan app use up the budget too
+    # closed: block entries when no policy is known or the budget bot has been silent for policy_max_age_s
+    # last_known: keep enforcing the last policy received, however old (still blocks if none ever arrived)
     fail_mode: Literal["closed", "last_known"] = "closed"
+    policy_max_age_s: float = Field(600.0, ge=30)
 
     @field_validator("alert_at_pct")
     @classmethod
@@ -143,7 +156,7 @@ class MoneyCfg(_Strict):
 
 class ExecutionCfg(_Strict):
     enabled: bool = False  # opt-in: runs your dhan_bot strategy inside the team with the budget guard
-    dhanbot_config: str = "dhanbot/config.toml"
+    dhanbot_config: str = "config/dhanbot.toml"  # see config/dhanbot.example.toml
     live: bool = False  # real orders need BOTH this and mode = "live" in the dhan_bot config
 
 
