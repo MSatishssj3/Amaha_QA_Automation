@@ -137,6 +137,7 @@ class BudgetCfg(_Strict):
 
 class MoneyCfg(_Strict):
     sector_map_file: str = ""  # optional CSV: symbol,sector
+    usd_inr: float = Field(85.0, gt=0)  # conversion for USD costs (AI API); set it to the current rate
     expense_categories: list[str] = ["data subscription", "server / VPS", "AI API", "software", "advisory", "other"]
 
 
