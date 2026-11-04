@@ -217,3 +217,24 @@ def diverging_bars(x: list, y: list[float], t: dict[str, Any], height: int = 260
     fig.update_xaxes(type="category")
     inr_axis(fig, ys)
     return fig
+
+
+def equity_curve(points: list[tuple[float, float, str]], t: dict[str, Any], height: int = 300):
+    """Cumulative net P&L after each closed trade (x = trade number, so nights and weekends leave no gaps)."""
+    if not points:
+        return empty(t, "No closed trades in this period", height)
+    n = list(range(1, len(points) + 1))
+    y = [p[1] for p in points]
+    hover = [f"trade {i} · {p[2]} · {T_from_ts(p[0]):%d %b %H:%M}<br>cumulative {T.arrow(p[1])} {T.inr(p[1], signed=True)}"
+             for i, p in zip(n, points, strict=True)]
+    fig = go.Figure(go.Scatter(x=n, y=y, mode="lines+markers" if len(n) <= 60 else "lines",
+                               line=dict(color=t["series1"], width=2), marker=dict(size=5, color=t["series1"]),
+                               customdata=hover, hovertemplate="%{customdata}<extra></extra>"))
+    fig.add_hline(y=0, line=dict(color=t["axis"], width=1))
+    fig.add_annotation(x=n[-1], y=y[-1], text=f"  {T.inr(y[-1], signed=True)}", showarrow=False, xanchor="left",
+                       font=dict(color=t["ink"], size=12))
+    T.style(fig, t, height=height, margin=dict(l=8, r=72, t=8, b=8))
+    fig.update_xaxes(title=dict(text="closed trades, oldest first", font=dict(color=t["muted"], size=11)),
+                     tickformat="d")
+    inr_axis(fig, y)
+    return fig

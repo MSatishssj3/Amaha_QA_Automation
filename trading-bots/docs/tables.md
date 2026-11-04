@@ -14,7 +14,7 @@ Every table is Parquet under `data/tables/<table>/` (partitioned tables use `<ke
 | [`orders`](#orders) | tables | date | replace | Latest broker order book of the day |
 | [`trades`](#trades) | tables | date | replace | Executed trades with per-trade charges |
 | [`ledger`](#ledger) | tables | date | replace | Account ledger vouchers (funds in/out, charges, settlements) |
-| [`exec_orders`](#exec_orders) | tables | date | replace | Orders placed by the execution bot (dhan_bot engine) |
+| [`exec_orders`](#exec_orders) | tables | date | replace | Orders placed by the execution bot (dhan_bot engine), by the day they were placed |
 | [`exec_fills`](#exec_fills) | tables | date | append | Fills of execution-bot orders |
 | [`candles_daily`](#candles_daily) | tables | symbol | replace | Daily OHLCV history per symbol |
 | [`history_metrics`](#history_metrics) | history | - | replace | Per-stock trend metrics as of the latest daily close |
@@ -26,6 +26,9 @@ Every table is Parquet under `data/tables/<table>/` (partitioned tables use `<ke
 | [`money_cashflows`](#money_cashflows) | money | - | replace | Funds added / withdrawn by month |
 | [`money_expenses`](#money_expenses) | money | - | replace | Spending outside trades: subscriptions, servers, AI API, manual entries |
 | [`money_summary`](#money_summary) | money | - | replace | Headline money numbers |
+| [`perf_trades`](#perf_trades) | journal | - | replace | Every round trip (flat to flat) of your trades, with charges, slippage, tags and notes |
+| [`perf_summary`](#perf_summary) | journal | - | replace | Trading statistics by period and source (closed trades, net of charges) |
+| [`perf_breakdown`](#perf_breakdown) | journal | - | replace | Closed trades grouped by hour, weekday, symbol, holding time, direction, source, exit and tag |
 | [`ai_costs`](#ai_costs) | ai_analyst | date | append | Every Claude API call: tokens and cost |
 
 ## bars_1m
@@ -181,7 +184,7 @@ Account ledger vouchers (funds in/out, charges, settlements). Owner: **tables** 
 
 ## exec_orders
 
-Orders placed by the execution bot (dhan_bot engine). Owner: **tables** bot; partitioned by `date`; replace writes.
+Orders placed by the execution bot (dhan_bot engine), by the day they were placed. Owner: **tables** bot; partitioned by `date`; replace writes.
 
 | Column | Type | Meaning |
 |---|---|---|
@@ -194,12 +197,17 @@ Orders placed by the execution bot (dhan_bot engine). Owner: **tables** bot; par
 | `price` | Float64 |  |
 | `status` | String |  |
 | `intent` | String | ENTRY / EXIT |
-| `role` | String |  |
+| `role` | String | entry / exit / sl / target / squareoff / flatten |
 | `filled_qty` | Int64 |  |
 | `avg_price` | Float64 |  |
 | `reason` | String |  |
 | `updated_ts` | Float64 | last change |
 | `placed_ts` | Float64 | when it was placed |
+| `ref_price` | Float64 | slippage reference: stop trigger, limit price, or last traded price when a market order was placed |
+| `order_type` | String | LIMIT / MARKET / STOP_LOSS / STOP_LOSS_MARKET |
+| `product` | String | INTRADAY / CNC / MARGIN |
+| `mode` | String | paper / live / simulated-exchange |
+| `platform` | String |  |
 
 ## exec_fills
 
@@ -216,6 +224,12 @@ Fills of execution-bot orders. Owner: **tables** bot; partitioned by `date`; app
 | `price` | Float64 |  |
 | `intent` | String |  |
 | `ts` | Float64 |  |
+| `role` | String | the order's role |
+| `leg` | String | super-order leg |
+| `product` | String |  |
+| `mode` | String | paper / live / simulated-exchange |
+| `est_charges` | Float64 | the engine's estimate of this fill's charges |
+| `platform` | String |  |
 
 ## candles_daily
 
@@ -384,6 +398,89 @@ Headline money numbers. Owner: **money** bot; replace writes.
 | `value` | Float64 |  |
 | `unit` | String | INR / % / count |
 | `note` | String |  |
+
+## perf_trades
+
+Every round trip (flat to flat) of your trades, with charges, slippage, tags and notes. Owner: **journal** bot; replace writes.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `trade_key` | String | stable id: book:platform:symbol:product:first fill |
+| `book` | String | real / paper |
+| `platform` | String |  |
+| `symbol` | String |  |
+| `segment` | String |  |
+| `product` | String |  |
+| `direction` | String | long / short |
+| `status` | String | closed / open / unmatched |
+| `source` | String | bot / manual / mixed / paper |
+| `entry_ts` | Float64 | first entry fill |
+| `entry_day` | Date |  |
+| `exit_ts` | Float64 | the fill that closed it |
+| `exit_day` | Date | the day the trade counts on |
+| `qty` | Int64 | quantity bought (long) or sold (short) on the way in |
+| `max_qty` | Int64 | largest position held |
+| `open_qty` | Int64 | still open (open trades only) |
+| `avg_entry` | Float64 |  |
+| `avg_exit` | Float64 |  |
+| `gross` | Float64 | P&L from prices only |
+| `charges` | Float64 | actual charges (paper: the engine's estimate) |
+| `net` | Float64 | gross - charges |
+| `return_pct` | Float64 | net / entry value, % |
+| `holding_s` | Float64 | seconds held |
+| `slippage` | Float64 | engine trades: cost against the order's reference price (+ = worse) |
+| `exit_reason` | String | target / stop-loss / square-off / strategy exit / manual ... |
+| `fills` | Int64 | fills in the trade |
+| `remark` | String | how the journal treated it, when unusual |
+| `tags` | String | your tags, comma separated |
+| `note` | String | your note |
+
+## perf_summary
+
+Trading statistics by period and source (closed trades, net of charges). Owner: **journal** bot; replace writes.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `scope` | String | today / month / fy / all |
+| `source` | String | real (engine + manual) / bot / manual / paper |
+| `trades` | Int64 | closed trades |
+| `wins` | Int64 | net > 0 |
+| `losses` | Int64 | net < 0 |
+| `win_rate` | Float64 | % |
+| `net_pnl` | Float64 |  |
+| `gross_pnl` | Float64 |  |
+| `charges` | Float64 |  |
+| `avg_win` | Float64 |  |
+| `avg_loss` | Float64 | negative |
+| `payoff` | Float64 | average win / average loss |
+| `expectancy` | Float64 | average net per trade |
+| `profit_factor` | Float64 | gross wins / gross losses (empty: no losing trade) |
+| `max_drawdown` | Float64 | largest fall of the cumulative net P&L |
+| `losing_streak` | Int64 | longest run of losing trades |
+| `winning_streak` | Int64 |  |
+| `avg_hold_s` | Float64 | average seconds held |
+| `slippage` | Float64 | engine trades |
+| `charges_pct_of_gross` | Float64 | charges / gross P&L, % |
+| `best` | Float64 | best trade |
+| `worst` | Float64 | worst trade |
+
+## perf_breakdown
+
+Closed trades grouped by hour, weekday, symbol, holding time, direction, source, exit and tag. Owner: **journal** bot; replace writes.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `scope` | String | month / fy / all |
+| `source` | String | real / paper |
+| `dimension` | String |  |
+| `bucket` | String |  |
+| `sort` | Int64 | display order |
+| `trades` | Int64 |  |
+| `wins` | Int64 |  |
+| `win_rate` | Float64 | % |
+| `net_pnl` | Float64 |  |
+| `avg_net` | Float64 |  |
+| `charges` | Float64 |  |
 
 ## ai_costs
 

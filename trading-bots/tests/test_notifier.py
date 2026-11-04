@@ -189,6 +189,8 @@ async def test_daily_summary_and_test_command(tmp_path, tg):
             "date": day, "limits": [{"rule": "daily_capital", "label": "New entries today", "unit": "inr",
                                      "used": 99408.0, "limit": 120000.0, "remaining": 20592.0, "pct": 82.8}],
             "external": {"turnover_inr": 7921.0}, "budget_rejects": 1, "total": {"entries": 12}})
+        await c.publish(topics.JOURNAL_UPDATED, {"day": day, "today": {"trades": 4, "wins": 3, "win_rate": 75.0,
+                                                                       "net_pnl": 1234.0, "expectancy": 308.5}})
         await c.publish(topics.AI_REPORT, {"report_id": "r1", "status": "ok", "headline": "Large caps steady",
                                            "ts": now, "kind": "post_close", "served_by": "claude-opus-5-5"})
         await c.publish(topics.ALERT, {"level": "ERROR", "source": "budget", "key": "x",
@@ -199,6 +201,7 @@ async def test_daily_summary_and_test_command(tmp_path, tg):
         assert t.startswith("📊 Daily summary") and "Trading engine: net ▼ -₹330" in t
         assert "Daily budget: ₹99,408 of ₹1,20,000 used (83%), 12 entries, 1 blocked" in t
         assert "AI: Large caps steady" in t and "Alerts: 0 warnings, 1 error" in t
+        assert "Closed trades: 4 (engine + yours), 3 won (75%), net ▲ +₹1,234, expectancy +₹308 per trade" in t
         assert await wait_for(lambda: any(x.startswith("📊 Daily summary") for x in api.texts()), 10)
         subject, body, html = mail.mails[-1]
         assert subject.startswith("[trading-bots] Daily summary") and "<table>" in html and "Large caps steady" in html

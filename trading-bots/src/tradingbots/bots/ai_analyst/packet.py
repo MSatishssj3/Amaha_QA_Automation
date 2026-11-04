@@ -5,6 +5,7 @@ Each run produces one JSON packet:
   trend label, plus the position when the stock is held;
 * the benchmark;
 * portfolio money figures: summary, allocation, charges by month and today's P&L;
+* trading performance from the journal: this month and all time, and P&L by hour of entry;
 * the daily budget status.
 
 Raw ticks never go in. Every number comes from a table another bot wrote, so the model sees exactly
@@ -39,6 +40,23 @@ def _clean(v: Any, nd: int = 2) -> Any:
     if isinstance(v, date):
         return v.isoformat()
     return v
+
+
+PERF_FIELDS = ("trades", "win_rate", "net_pnl", "expectancy", "avg_win", "avg_loss", "profit_factor", "max_drawdown",
+               "losing_streak", "charges_pct_of_gross", "slippage")
+
+
+def _trading(reader: TableReader) -> dict[str, Any]:
+    """The journal's statistics for real-money trades (engine + manual); empty before the first closed trade."""
+    perf = {r["scope"]: {k: _clean(r.get(k)) for k in PERF_FIELDS}
+            for r in _rows(reader, "SELECT * FROM perf_summary WHERE source = 'real' AND scope IN ('month', 'all') "
+                                   "AND trades > 0")}
+    if not perf:
+        return {}
+    hours = [{"hour": r["bucket"], "trades": r["trades"], "net": _clean(r["net_pnl"]), "win_rate": _clean(r["win_rate"])}
+             for r in _rows(reader, "SELECT bucket, trades, net_pnl, win_rate FROM perf_breakdown WHERE scope = 'all' "
+                                    "AND source = 'real' AND dimension = 'hour' ORDER BY sort")]
+    return {"this_month": perf.get("month"), "all_time": perf.get("all"), "by_entry_hour": hours}
 
 
 def _rows(reader: TableReader, sql: str, params: list | None = None) -> list[dict]:
@@ -108,7 +126,8 @@ def build_packet(reader: TableReader, settings: Settings, kind: str, now: float,
                  "allocation": [{k: _clean(r.get(k)) for k in ("platform", "symbol", "kind", "current_value",
                                                                "weight_pct")} for r in alloc[:10]],
                  "charges_by_month": charges,
-                 "pnl_today": {k: _clean(v) for k, v in (pnl[0] if pnl else {}).items()}}
+                 "pnl_today": {k: _clean(v) for k, v in (pnl[0] if pnl else {}).items()},
+                 "trading": _trading(reader)}
     budget: dict[str, Any] = {}
     if budget_usage:
         budget = {"limits": [{k: it.get(k) for k in ("label", "used", "limit", "pct", "remaining", "unit")}

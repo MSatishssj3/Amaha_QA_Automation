@@ -79,6 +79,7 @@ PAGES = [
     ("pages/money.py", "Money", ["Net worth", "XIRR"]),
     ("pages/budget.py", "Daily budget", ["New entries today", "Entries blocked by the budget"]),
     ("pages/trading.py", "Trading", ["Mode", "Net P&L today"]),
+    ("pages/performance.py", "Performance", ["Net P&L", "Win rate", "Expectancy", "Profit factor", "Max drawdown"]),
     ("pages/ai.py", "AI insights", ["Model", "Spent today"]),
     ("pages/tables.py", "Tables", []),
     ("pages/settings.py", "Settings", []),
@@ -146,3 +147,19 @@ def test_notifications_tab_status_test_message_and_save(app):
     assert sent and sent[-1]["patch"]["notify"]["quiet_hours"] == ["23:00", "06:30"]
     assert sent[-1]["patch"]["notify"]["info_keys"] == ["exec-started", "exec-day-report", "budget-summary",
                                                         "ai-report", "ai-deep-dive"]
+
+
+def test_performance_page_numbers_match_the_journal(app):
+    at = signed_in().run()
+    at.switch_page("pages/performance.py").run()
+    assert not at.exception, [e.value for e in at.exception]
+    vals = {m.label: m.value for m in at.metric}
+    assert vals["Closed trades"] != "0" and vals["Win rate"].endswith("%")
+    next(r for r in at.radio if r.label == "Period").set_value("All time").run()
+    assert not at.exception
+    all_time = int({m.label: m.value for m in at.metric}["Closed trades"])
+    next(r for r in at.radio if r.label == "Trades").set_value("Manual").run()
+    manual = int({m.label: m.value for m in at.metric}["Closed trades"])
+    assert 0 < manual < all_time
+    next(b for b in at.button if b.label == "Save tags and notes").click().run()
+    assert any(i.value == "Nothing changed." for i in at.info)

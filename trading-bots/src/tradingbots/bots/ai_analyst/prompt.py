@@ -89,6 +89,12 @@ year-to-date, and XIRR.
 - portfolio.allocation: the largest holdings and positions with their weight in percent.
 - portfolio.charges_by_month: charges and turnover per month, with charges as a percent of turnover.
 - portfolio.pnl_today: today's realised and unrealised profit or loss, charges and net, in rupees.
+- portfolio.trading (when there are closed trades): the trade journal for real-money trades, this month and \
+all time. A trade is one round trip, flat to flat, net of charges. Fields: trades, win_rate (percent), \
+net_pnl, expectancy (average net per trade), avg_win, avg_loss, profit_factor (winning money / losing money; \
+empty when nothing lost), max_drawdown, losing_streak (trades), charges_pct_of_gross (percent) and slippage \
+(rupees the engine's fills cost against its expected prices). by_entry_hour gives net P&L by the hour trades were \
+entered. Use it in portfolio.observations when it shows a pattern; small samples deserve caution.
 - budget.limits: each daily limit with its used amount, limit, percent used and what remains. \
 budget.engine: whether the trading bot is running and in which mode.
 """

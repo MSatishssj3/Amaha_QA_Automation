@@ -23,6 +23,7 @@ Bots talk only through the bus: **events** (publish/subscribe, at-least-once; ev
 | `tables.updated` | `TABLES_UPDATED` | {table, rows, partitions} |
 | `history.updated` | `HISTORY_UPDATED` | {symbols, as_of} |
 | `money.updated` | `MONEY_UPDATED` | {as_of, summary} |
+| `journal.updated` | `JOURNAL_UPDATED` | {as_of, day, today, month, all, open, unmatched} (stats of real trades) |
 | `budget.policy` | `BUDGET_POLICY` | BudgetPolicyMsg |
 | `budget.usage` | `BUDGET_USAGE` | BudgetUsageMsg |
 | `budget.external` | `BUDGET_EXTERNAL` | {date, turnover_inr, trades, per_stock, trades_by_stock} - your own trades |
@@ -63,6 +64,7 @@ Send with `bus.request("cmd.<bot>.<action>", data)`; the reply always has `ok`. 
 | tables | `compact`, `flush`, `list` |
 | history | `recompute`, `refresh` |
 | money | `add_expense`, `delete_expense`, `list_expenses`, `recompute` |
+| journal | `annotate`, `notes`, `recompute`, `stats` |
 | budget | `history`, `status` |
 | ai_analyst | `deep_dive`, `report`, `reports`, `run`, `status`, `test` |
 | execution | `control`, `status` |

@@ -56,3 +56,17 @@ def arrow(x: float | None) -> str:
     if x is None or x == 0:
         return "•"
     return "▲" if x > 0 else "▼"
+
+
+def duration(seconds: float | None) -> str:
+    """How long something was held: 45 s, 12 min, 2.5 h, 3.2 days."""
+    if seconds is None or (isinstance(seconds, float) and math.isnan(seconds)):
+        return "-"
+    s = max(0.0, float(seconds))
+    if s < 60:
+        return f"{s:.0f} s"
+    if s < 3600:
+        return f"{s / 60:.0f} min"
+    if s < 86400:
+        return f"{s / 3600:.1f} h"
+    return f"{s / 86400:.1f} days"

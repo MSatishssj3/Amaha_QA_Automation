@@ -74,6 +74,8 @@ class ExecutionBot(Bot):
         self._last_pnl_ts = 0.0
         self._placed: dict[str, float] = {}  # cid -> when the order was first seen (placed)
         self._legs_sent: dict[str, tuple] = {}  # cid -> super-order leg statuses last published
+        self._ref: dict[str, float | None] = {}  # cid -> reference price for slippage (see _ref_price)
+        self._charged: dict[str, bool] = {}  # cid -> brokerage already estimated for this order
 
     def details(self) -> dict:
         e = self.engine
@@ -294,24 +296,46 @@ class ExecutionBot(Bot):
             if self._legs_sent.get(o.cid) == legs:
                 return
             self._legs_sent[o.cid] = legs
-        placed = self._placed.setdefault(o.cid, now)
-        if len(self._placed) > 20_000:  # a long-running engine: keep the map bounded
+        if o.cid not in self._placed:  # first sight: when it was placed, and the price slippage is measured from
+            self._placed[o.cid] = now
+            self._ref[o.cid] = self._ref_price(o)
+        placed, ref = self._placed[o.cid], self._ref.get(o.cid)
+        if len(self._placed) > 20_000:  # a long-running engine: keep the maps bounded
             for k in list(self._placed)[:10_000]:
-                self._placed.pop(k, None)
-                self._legs_sent.pop(k, None)
+                for m in (self._placed, self._ref, self._legs_sent, self._charged):
+                    m.pop(k, None)
         self._queue(topics.EXEC_ORDER, {
             "cid": o.cid, "broker_id": o.broker_id, "symbol": o.instrument.trading_symbol, "segment": o.instrument.segment,
             "side": o.side.value, "qty": o.qty, "price": o.price_paise / 100, "status": o.status.value,
             "intent": o.intent.value, "role": o.role, "filled_qty": o.filled_qty,
             "avg_price": round(o.avg_fill_paise / 100, 4), "reason": o.reason, "event": ev.kind, "updated_ts": now,
-            "placed_ts": placed, "platform": self.platform_name})
+            "placed_ts": placed, "ref_price": ref, "order_type": o.order_type.value, "product": o.product.value,
+            "mode": self.exec_mode, "platform": self.platform_name})
         f = ev.fill
         if ev.kind == "fill" and f is not None:
+            first = o.cid not in self._charged  # brokerage is charged once per order
+            self._charged[o.cid] = True
+            eng = self.engine
+            est = eng.positions.estimate_charges(f.qty, f.price_paise, o.instrument, first) / 100 if eng else None
             self._queue(topics.EXEC_FILL, {
                 "cid": o.cid, "broker_id": o.broker_id, "symbol": o.instrument.trading_symbol,
                 "segment": o.instrument.segment, "side": f.side.value, "qty": f.qty, "price": round(f.price_paise / 100, 4),
                 "value": round(f.qty * f.price_paise * o.instrument.multiplier / 100, 2), "intent": o.intent.value,
-                "leg": f.leg, "role": o.role, "ts": f.ts, "platform": self.platform_name})
+                "leg": f.leg, "role": o.role, "ts": f.ts, "product": f.product.value, "mode": self.exec_mode,
+                "est_charges": round(est, 2) if est is not None else None, "platform": self.platform_name})
+
+    def _ref_price(self, o: Order) -> float | None:
+        """What a fill is compared with for slippage: the stop trigger, the limit price, or for a market order
+        the last traded price when it was placed."""
+        ot = o.order_type.value
+        if ot in ("STOP_LOSS", "STOP_LOSS_MARKET") and o.trigger_paise:
+            return o.trigger_paise / 100
+        if ot == "LIMIT" and o.price_paise:
+            return o.price_paise / 100
+        st = self.engine.market.of(o.instrument) if self.engine is not None else None
+        if st is not None and st.ltp > 0:
+            return round(float(st.ltp), 4)
+        return (o.price_paise or o.trigger_paise) / 100 or None
 
     def _on_reject(self, o: Order) -> None:
         rule = (o.reason or "rejected").split(":", 1)[0]
