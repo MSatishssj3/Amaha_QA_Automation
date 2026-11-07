@@ -4,9 +4,11 @@ MTF Calculator Bot
 
 For every stock in your watchlist, works out the maximum number of shares you
 can buy using MTF (Margin Trading Facility) such that the amount BORROWED from
-the broker stays under a chosen limit -- e.g. Pocketful charges 5.99% p.a. on
-MTF borrowings below Rs 1 lakh, so you may want to keep the funded amount
-below Rs 1,00,000.
+the broker stays under a chosen limit (Rs 1 lakh by default, up to Rs 2 crore).
+Pocketful charges 5.99% p.a. on MTF borrowings up to Rs 1 lakh, so the default
+keeps you in the cheapest slab.
+
+For a slider-based UI run:  streamlit run app.py
 
 How the numbers are calculated (per stock):
     trade value   = qty * price
@@ -15,10 +17,12 @@ How the numbers are calculated (per stock):
     max qty       = largest qty with borrowed <= max borrow
                     (and your margin <= --capital, if given)
     interest/day  = borrowed * rate / 100 / 365
+    rate          = slab rate for the borrowed amount (see INTEREST_SLABS),
+                    unless --rate is given
 
 Usage examples:
     python mtf_calculator.py
-    python mtf_calculator.py --max-borrow 99999 --rate 5.99
+    python mtf_calculator.py --max-borrow 500000
     python mtf_calculator.py --capital 30000
     python mtf_calculator.py --split            # share the limit across all stocks
     python mtf_calculator.py --live             # fetch live NSE prices (needs yfinance)
@@ -36,9 +40,27 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_WATCHLIST = os.path.join(HERE, "watchlist.csv")
 
-# Pocketful MTF: 5.99% p.a. when the borrowed amount is below Rs 1 lakh.
-DEFAULT_MAX_BORROW = 99_999.0
-DEFAULT_RATE = 5.99
+# Borrow limit: default Rs 1 lakh, adjustable up to Rs 2 crore.
+MIN_BORROW = 1_00_000.0
+MAX_BORROW = 2_00_00_000.0
+DEFAULT_MAX_BORROW = MIN_BORROW
+
+# Pocketful MTF interest slabs as (borrowed amount up to, % p.a.).
+# The slab is chosen by the total borrowed and that rate applies to all of it.
+# Verify against the Pocketful app / MTF calculator and edit here if they change.
+INTEREST_SLABS = [
+    (1_00_000, 5.99),
+    (25_00_000, 14.60),
+    (float("inf"), 16.00),
+]
+
+
+def slab_rate(borrowed):
+    """Interest rate (% p.a.) for a given borrowed amount."""
+    for upto, rate in INTEREST_SLABS:
+        if borrowed <= upto:
+            return rate
+    return INTEREST_SLABS[-1][1]
 
 
 def load_watchlist(path):
@@ -74,8 +96,11 @@ def fetch_live_prices(stocks, exchange_suffix=".NS"):
             print(f"! Could not fetch {s['symbol']}: {exc}  (using CSV price)")
 
 
-def calculate(stock, max_borrow, rate, capital=None):
-    """Return the max-qty MTF position for one stock."""
+def calculate(stock, max_borrow, rate=None, capital=None):
+    """Return the max-qty MTF position for one stock.
+
+    rate=None -> use the slab rate for this position's borrowed amount.
+    """
     price = stock["price"]
     margin_pct = stock["margin_pct"]
     borrow_per_share = price * (1 - margin_pct / 100)
@@ -92,6 +117,8 @@ def calculate(stock, max_borrow, rate, capital=None):
     value = qty * price
     own = qty * own_per_share
     borrowed = value - own
+    if rate is None:
+        rate = slab_rate(borrowed)
     interest_day = borrowed * rate / 100 / 365
     return {
         "symbol": stock["symbol"],
@@ -101,9 +128,37 @@ def calculate(stock, max_borrow, rate, capital=None):
         "value": value,
         "own": own,
         "borrowed": borrowed,
+        "rate": rate,
         "interest_day": interest_day,
         "interest_month": interest_day * 30,
     }
+
+
+TOTAL_KEYS = ("qty", "value", "own", "borrowed", "interest_day", "interest_month")
+
+
+def build_table(stocks, max_borrow, split=False, rate=None, capital=None):
+    """Calculate every watchlist row.
+
+    split=False -> each row is the max for that stock on its own.
+    split=True  -> the limit (and capital) is shared equally, so the TOTAL
+                   borrowed stays under max_borrow; the slab rate is then
+                   decided by the total borrowed.
+    Returns (rows, totals) -- totals is None when split is False.
+    """
+    n = len(stocks) if split else 1
+    per_borrow = max_borrow / n
+    per_capital = capital / n if capital is not None else None
+    rows = [calculate(s, per_borrow, rate, per_capital) for s in stocks]
+    if not split:
+        return rows, None
+
+    total_borrowed = sum(r["borrowed"] for r in rows)
+    book_rate = rate if rate is not None else slab_rate(total_borrowed)
+    rows = [calculate(s, per_borrow, book_rate, per_capital) for s in stocks]
+    totals = {k: sum(r[k] for r in rows) for k in TOTAL_KEYS}
+    totals["rate"] = book_rate
+    return rows, totals
 
 
 def inr(x):
@@ -130,6 +185,7 @@ COLUMNS = [
     ("Trade Value", "value", inr),
     ("You Pay", "own", inr),
     ("Borrowed", "borrowed", inr),
+    ("Rate % p.a.", "rate", lambda v: f"{v:.2f}%"),
     ("Interest/Day", "interest_day", inr),
     ("Interest/30d", "interest_month", inr),
 ]
@@ -169,13 +225,21 @@ def save_csv(rows, path):
                         for _, key, _ in COLUMNS])
 
 
+def amount_in_range(text):
+    value = float(text)
+    if not MIN_BORROW <= value <= MAX_BORROW:
+        raise argparse.ArgumentTypeError(
+            f"must be between {inr(MIN_BORROW)} (1 lakh) and {inr(MAX_BORROW)} (2 crore)")
+    return value
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description="MTF max-quantity calculator for your watchlist")
     p.add_argument("--watchlist", default=DEFAULT_WATCHLIST, help="path to watchlist CSV")
-    p.add_argument("--max-borrow", type=float, default=DEFAULT_MAX_BORROW,
-                   help="max amount you want to borrow, in INR (default 99999 = under 1 lakh)")
-    p.add_argument("--rate", type=float, default=DEFAULT_RATE,
-                   help="MTF interest rate, %% per annum (default 5.99)")
+    p.add_argument("--max-borrow", type=amount_in_range, default=DEFAULT_MAX_BORROW,
+                   help="max amount to borrow in INR, 100000 (1 lakh, default) to 20000000 (2 crore)")
+    p.add_argument("--rate", type=float, default=None,
+                   help="override the interest rate, %% p.a. (default: Pocketful slab rate)")
     p.add_argument("--capital", type=float, default=None,
                    help="your own cash available for margin, in INR (optional cap)")
     p.add_argument("--split", action="store_true",
@@ -191,29 +255,26 @@ def main(argv=None):
     if args.live:
         fetch_live_prices(stocks)
 
+    rows, totals = build_table(stocks, args.max_borrow, args.split, args.rate, args.capital)
     n = len(stocks) if args.split else 1
-    per_borrow = args.max_borrow / n
-    per_capital = args.capital / n if args.capital is not None else None
-
-    rows = [calculate(s, per_borrow, args.rate, per_capital) for s in stocks]
 
     print("MTF Calculator Bot")
-    print(f"  Interest rate : {args.rate}% p.a.")
+    print("  Interest rate : " + (f"{args.rate}% p.a. (override)" if args.rate is not None
+                                  else "Pocketful slab rate for the borrowed amount"))
     print(f"  Max borrow    : Rs {inr(args.max_borrow)}"
-          + (f"  (split -> Rs {inr(per_borrow)} per stock)" if args.split else "  (per stock)"))
+          + (f"  (split -> Rs {inr(args.max_borrow / n)} per stock)" if args.split
+             else "  (per stock)"))
     if args.capital is not None:
         print(f"  Own capital   : Rs {inr(args.capital)}"
-              + (f"  (split -> Rs {inr(per_capital)} per stock)" if args.split else ""))
+              + (f"  (split -> Rs {inr(args.capital / n)} per stock)" if args.split else ""))
     print()
 
-    total = None
-    if args.split:
-        t = {k: sum(r[k] for r in rows) for k in ("value", "own", "borrowed",
-                                                  "interest_day", "interest_month")}
-        total = ["TOTAL", "", "", str(sum(r["qty"] for r in rows)),
-                 inr(t["value"]), inr(t["own"]), inr(t["borrowed"]),
-                 inr(t["interest_day"]), inr(t["interest_month"])]
-    print(render_table(rows, total))
+    total_row = None
+    if totals:
+        total_row = ["TOTAL", "", "", str(totals["qty"]), inr(totals["value"]),
+                     inr(totals["own"]), inr(totals["borrowed"]), f"{totals['rate']:.2f}%",
+                     inr(totals["interest_day"]), inr(totals["interest_month"])]
+    print(render_table(rows, total_row))
 
     if not args.split:
         print("\nEach row is independent: it is the max you can buy of THAT stock alone.")
