@@ -1,0 +1,683 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MTF Watchlist Calculator</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: one narrow column of controls (amount -> platforms -> mode), then the full-width watchlist table that reacts to them. */
+:root {
+  --bg: #f4f7f6;
+  --panel: #ffffff;
+  --fg: #12201c;
+  --muted: #5b6b66;
+  --line: #d9e2df;
+  --accent: #0f6e59;
+  --accent-soft: #e2f1ec;
+  --accent-fg: #ffffff;
+  --warn: #9a5b00;
+  --warn-soft: #fbefdc;
+  --mid: #b06d00;
+  --high: #b3392a;
+  --input: #f8faf9;
+  --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-num: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1513; --panel: #14201d; --fg: #e3ece9; --muted: #93a6a0; --line: #26352f;
+    --accent: #4cc3a0; --accent-soft: #173a31; --accent-fg: #06221a;
+    --warn: #f0b765; --warn-soft: #3a2a12; --mid: #eab24f; --high: #f2846f; --input: #101a17;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d1513; --panel: #14201d; --fg: #e3ece9; --muted: #93a6a0; --line: #26352f;
+  --accent: #4cc3a0; --accent-soft: #173a31; --accent-fg: #06221a;
+  --warn: #f0b765; --warn-soft: #3a2a12; --mid: #eab24f; --high: #f2846f; --input: #101a17;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.5;
+}
+.wrap {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 48px;
+  display: grid;
+  gap: 20px;
+}
+header h1 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(1.6rem, 3.2vw, 2.1rem);
+  line-height: 1.1;
+  margin: 0 0 6px;
+  text-wrap: balance;
+}
+header p { margin: 0; color: var(--muted); max-width: 65ch; }
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 20px;
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+.label {
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+
+/* amount */
+.amount-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; }
+.amount {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(2.2rem, 6vw, 3.2rem);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.amount-words { color: var(--muted); font-size: 1.05rem; }
+.slab-note { color: var(--muted); font-size: 0.9rem; }
+.slab-note b { color: var(--fg); font-weight: 600; }
+
+.amount-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 230px;
+  gap: 16px 24px;
+  align-items: start;
+}
+@media (max-width: 720px) { .amount-grid { grid-template-columns: minmax(0, 1fr); } }
+.amount-main { display: grid; gap: 14px; min-width: 0; }
+.rate-box {
+  --tone: var(--accent);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--tone);
+  border-radius: var(--radius);
+  background: var(--input);
+  padding: 12px 14px;
+  display: grid;
+  gap: 4px;
+  transition: border-color .25s;
+}
+.rate-box[data-tone="mid"] { --tone: var(--mid); }
+.rate-box[data-tone="high"] { --tone: var(--high); }
+.rate-value {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 2.3rem;
+  line-height: 1;
+  color: var(--tone);
+  font-variant-numeric: tabular-nums;
+  transition: color .25s;
+}
+.rate-value small { font-size: 0.95rem; font-weight: 500; color: var(--muted); margin-left: 4px; }
+.rate-sub { color: var(--muted); font-size: 0.85rem; }
+.meter { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin-top: 4px; }
+.meter i { display: block; height: 100%; width: 0; background: var(--tone); border-radius: 3px; transition: width .25s, background-color .25s; }
+.meter-scale { display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--muted); }
+.rate-box.bump .rate-value { animation: bump .35s ease-out; }
+@keyframes bump { 0% { transform: scale(1.12); } 100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) {
+  .rate-box.bump .rate-value { animation: none; }
+  .meter i, .rate-box, .rate-value { transition: none; }
+}
+.track-wrap { position: relative; }
+.slab-mark {
+  position: absolute; top: 3px; width: 2px; height: 22px; margin-left: -1px;
+  background: var(--warn); border-radius: 1px; pointer-events: none;
+}
+.slab-mark span {
+  position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+  font-size: 0.68rem; color: var(--warn); white-space: nowrap; font-family: var(--font-num);
+}
+.slider-row { display: flex; align-items: center; gap: 10px; }
+.step-btn {
+  flex: none;
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--input);
+  color: var(--fg);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.step-btn:hover { border-color: var(--accent); color: var(--accent); }
+.slider-box { flex: 1; min-width: 0; }
+input[type="range"] {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 28px; background: transparent; margin: 0; cursor: pointer;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 8px; border-radius: 4px;
+  background: linear-gradient(to right, var(--accent) var(--pct, 0%), var(--line) var(--pct, 0%));
+}
+input[type="range"]::-moz-range-track { height: 8px; border-radius: 4px; background: var(--line); }
+input[type="range"]::-moz-range-progress { height: 8px; border-radius: 4px; background: var(--accent); }
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 24px; height: 24px; margin-top: -8px; border-radius: 50%;
+  background: var(--panel); border: 3px solid var(--accent);
+  box-shadow: 0 1px 3px rgba(0,0,0,.25);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--panel); border: 3px solid var(--accent);
+}
+input[type="range"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 6px; }
+.scale { position: relative; height: 18px; margin: 2px 12px 0; font-size: 0.75rem; color: var(--muted); }
+.scale span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  border: 1px solid var(--line);
+  background: var(--input);
+  color: var(--fg);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font: 500 0.85rem var(--font-body);
+  cursor: pointer;
+}
+.chip:hover { border-color: var(--accent); }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+
+/* platforms */
+.platforms-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; align-items: baseline; }
+.platforms {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+@media (max-width: 720px) { .platforms { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.plat {
+  text-align: left;
+  border: 1px solid var(--line);
+  background: var(--input);
+  color: var(--fg);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  cursor: pointer;
+  display: grid;
+  gap: 2px;
+  font: inherit;
+  min-width: 0;
+}
+.plat:hover { border-color: var(--accent); }
+.plat[aria-pressed="true"] { border: 2px solid var(--accent); padding: 11px 13px; background: var(--accent-soft); }
+.plat-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 4px 6px; }
+.plat-name { font-weight: 600; }
+.pill {
+  font-size: 0.7rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+  background: var(--accent); color: var(--accent-fg); border-radius: 999px; padding: 1px 8px;
+}
+.plat-rate { color: var(--muted); font-size: 0.85rem; }
+.plat-cost { font-size: 1.15rem; font-weight: 600; }
+.plat-extra { font-size: 0.8rem; color: var(--warn); min-height: 1.2em; }
+
+/* mode */
+.seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 999px; padding: 3px; background: var(--input); gap: 3px; }
+.seg button {
+  border: 0; background: transparent; color: var(--fg);
+  font: 500 0.9rem var(--font-body);
+  padding: 6px 14px; border-radius: 999px; cursor: pointer;
+}
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); }
+.mode-note { color: var(--muted); font-size: 0.9rem; margin: 0; }
+
+/* table */
+.table-head { display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: space-between; align-items: center; }
+.table-head h2 { font-family: var(--font-display); font-weight: 700; font-size: 1.3rem; margin: 0; }
+.table-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+table { border-collapse: collapse; width: 100%; min-width: 820px; }
+th, td { padding: 9px 10px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+thead th {
+  font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
+  font-weight: 600; background: var(--input); position: sticky; top: 0;
+}
+thead th.key { color: var(--accent); }
+thead th .sub { display: block; font-size: 0.68rem; letter-spacing: 0.02em; text-transform: none; font-weight: 500; }
+tbody tr:hover td { background: var(--accent-soft); }
+td.sym { font-weight: 600; }
+td.qty { font-family: var(--font-num); font-weight: 600; font-size: 1.1rem; color: var(--accent); }
+td.total { font-family: var(--font-num); font-weight: 600; }
+td.dim { font-family: var(--font-num); color: var(--muted); }
+td.zero { color: var(--warn); }
+.foot td { font-weight: 600; background: var(--input); font-family: var(--font-num); }
+.foot td:first-child { font-family: var(--font-body); }
+.cell-input {
+  width: 5.6em;
+  font: 400 0.95rem var(--font-num);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--fg);
+  background: var(--input);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 6px;
+}
+.cell-input.pct { width: 4.2em; }
+.cell-input.sym-in { width: 8em; text-align: left; text-transform: uppercase; font-family: var(--font-body); }
+.cell-input:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: var(--accent); }
+.rm {
+  border: 0; background: transparent; color: var(--muted); cursor: pointer;
+  font-size: 1.1rem; width: 28px; height: 28px; border-radius: 6px;
+}
+.rm:hover { color: var(--warn); background: var(--warn-soft); }
+.add-row td { background: var(--panel); }
+.btn {
+  border: 1px solid var(--accent); background: var(--accent); color: var(--accent-fg);
+  font: 600 0.85rem var(--font-body); border-radius: 6px; padding: 5px 12px; cursor: pointer;
+}
+.btn.ghost { background: transparent; color: var(--accent); }
+.tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.tools .status { color: var(--muted); font-size: 0.85rem; }
+.file-label { position: relative; overflow: hidden; }
+.file-label input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+button:focus-visible, .chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.notes { color: var(--muted); font-size: 0.85rem; display: grid; gap: 6px; max-width: 80ch; }
+.notes p { margin: 0; }
+.notes code { font-family: var(--font-num); font-size: 0.8rem; }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>MTF Watchlist Calculator</h1>
+    <p>Pick how much you want to borrow with MTF. The table shows how many shares of each watchlist stock that buys, and what it costs.</p>
+  </header>
+
+  <section class="panel" aria-labelledby="amount-label">
+    <div class="amount-grid">
+      <div class="amount-main">
+        <div class="label" id="amount-label">Amount to borrow via MTF</div>
+        <div class="amount-row">
+          <div class="amount" id="amount">₹1,00,000</div>
+          <div class="amount-words" id="amount-words">1 lakh</div>
+        </div>
+        <div class="slider-row">
+          <button class="step-btn" id="minus" type="button" aria-label="Decrease amount">−</button>
+          <div class="slider-box">
+            <div class="track-wrap">
+              <input type="range" id="slider" min="0" max="200" step="1" value="0" aria-labelledby="amount-label">
+              <div id="marks" aria-hidden="true"></div>
+            </div>
+            <div class="scale" id="scale" aria-hidden="true"></div>
+          </div>
+          <button class="step-btn" id="plus" type="button" aria-label="Increase amount">+</button>
+        </div>
+        <div class="chips" id="chips" role="group" aria-label="Quick amounts"></div>
+      </div>
+      <aside class="rate-box" id="rate-box" aria-live="polite">
+        <div class="label">Interest rate now</div>
+        <div class="rate-value num" id="rate-value">5.99%<small>a year</small></div>
+        <div class="rate-sub" id="rate-sub"></div>
+        <div class="meter" aria-hidden="true"><i id="meter"></i></div>
+        <div class="meter-scale num" aria-hidden="true"><span id="meter-min"></span><span id="meter-max"></span></div>
+      </aside>
+    </div>
+    <div class="slab-note" id="slab-note"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="plat-label">
+    <div class="platforms-head">
+      <div class="label" id="plat-label">Interest for 30 days, by platform</div>
+      <div class="slab-note" id="plat-basis"></div>
+    </div>
+    <div class="platforms" id="platforms"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="mode-label">
+    <div class="label" id="mode-label">How to use the amount</div>
+    <div><div class="seg" id="mode" role="group" aria-labelledby="mode-label">
+      <button type="button" data-mode="each" aria-pressed="true">Each stock on its own</button>
+      <button type="button" data-mode="together" aria-pressed="false">Whole watchlist together</button>
+    </div></div>
+    <p class="mode-note" id="mode-note"></p>
+  </section>
+
+  <section style="display:grid; gap:10px; min-width:0">
+    <div class="table-head">
+      <h2>Your watchlist</h2>
+      <div class="tools">
+        <label class="btn ghost file-label">Import watchlist.csv
+          <input type="file" id="import" accept=".csv,text/csv">
+        </label>
+        <button class="btn ghost" id="reset" type="button">Reset to sample</button>
+        <span class="status" id="status" role="status"></span>
+      </div>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Stock</th>
+            <th>Price<span class="sub">₹</span></th>
+            <th>Margin %</th>
+            <th class="key">Shares<span class="sub">you can buy</span></th>
+            <th class="key">Total amount<span class="sub">₹</span></th>
+            <th>You pay<span class="sub">₹</span></th>
+            <th>Borrowed<span class="sub">₹</span></th>
+            <th>Interest / 30d<span class="sub" id="int-head">₹</span></th>
+            <th><span class="label" style="font-size:0">Remove</span></th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+        <tbody id="foot" class="foot"></tbody>
+        <tbody>
+          <tr class="add-row">
+            <td><input class="cell-input sym-in" id="new-sym" placeholder="SYMBOL" aria-label="New stock symbol"></td>
+            <td><input class="cell-input" id="new-price" type="number" min="0" step="0.05" placeholder="Price" aria-label="New stock price"></td>
+            <td><input class="cell-input pct" id="new-margin" type="number" min="0" max="99" step="0.5" placeholder="25" aria-label="New stock MTF margin percent"></td>
+            <td colspan="6" style="text-align:left"><button class="btn" id="add" type="button">Add stock</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="notes">
+    <p><b>How it's worked out:</b> borrowed per share = price × (1 − margin %). Shares you can buy = the most whole shares whose borrowed amount stays at or under your limit. Total amount = shares × price; you pay the margin part and the platform lends the rest.</p>
+    <p><b>Interest:</b> where a platform has slabs, the slab is picked by the total borrowed and that rate applies to the whole amount. Rates are from each broker's published MTF pricing, checked Nov 2026, and change often, so confirm them in the app. Brokerage, GST and pledge charges are not included.</p>
+    <p><b>MTF margin %</b> is the share of the trade you pay upfront. It differs by stock and can differ by broker, so copy it from your app. Your edits are kept in this browser.</p>
+  </div>
+</div>
+
+<script>
+(() => {
+  // ---- data ---------------------------------------------------------------
+  // MTF interest slabs: [borrowed amount up to, % p.a.]. Keep in sync with
+  // PLATFORMS in mtf_calculator.py.
+  const INF = Infinity;
+  const PLATFORMS = {
+    Pocketful: [[100000, 5.99], [2500000, 14.60], [INF, 16.00]],
+    Dhan: [[500000, 12.49], [1000000, 13.49], [2500000, 14.49], [INF, 15.49]],
+    Groww: [[INF, 14.95]],
+    Zerodha: [[INF, 14.60]],
+  };
+  const SAMPLE = [
+    { symbol: "RELIANCE", price: 1450, margin: 25 },
+    { symbol: "TCS", price: 3100, margin: 25 },
+    { symbol: "INFY", price: 1500, margin: 25 },
+    { symbol: "HDFCBANK", price: 980, margin: 22 },
+    { symbol: "ICICIBANK", price: 1400, margin: 22 },
+    { symbol: "SBIN", price: 850, margin: 25 },
+    { symbol: "ITC", price: 410, margin: 25 },
+    { symbol: "TATAMOTORS", price: 690, margin: 30 },
+  ];
+
+  // Slider stops: Rs 10,000 steps to 10 L, Rs 1 L steps to 1 Cr, Rs 5 L steps to 2 Cr.
+  const STOPS = [];
+  for (let v = 100000; v < 1000000; v += 10000) STOPS.push(v);
+  for (let v = 1000000; v < 10000000; v += 100000) STOPS.push(v);
+  for (let v = 10000000; v <= 20000000; v += 500000) STOPS.push(v);
+  const ALL_RATES = Object.values(PLATFORMS).flat().map(s => s[1]);
+  const RATE_MIN = Math.min(...ALL_RATES), RATE_MAX = Math.max(...ALL_RATES);
+  const QUICK = [100000, 500000, 1000000, 2500000, 5000000, 10000000, 20000000];
+  const SCALE = [100000, 500000, 1000000, 5000000, 20000000];
+
+  // ---- state --------------------------------------------------------------
+  const store = {
+    get(k, fallback) { try { const v = localStorage.getItem("mtf:" + k); return v == null ? fallback : JSON.parse(v); } catch (e) { return fallback; } },
+    set(k, v) { try { localStorage.setItem("mtf:" + k, JSON.stringify(v)); } catch (e) {} },
+  };
+  let stocks = store.get("stocks", null);
+  if (!Array.isArray(stocks) || !stocks.length) stocks = SAMPLE.map(s => ({ ...s }));
+  let idx = Math.min(Math.max(0, Number(store.get("idx", 0)) || 0), STOPS.length - 1);
+  let platform = store.get("platform", "Pocketful");
+  if (!PLATFORMS[platform]) platform = "Pocketful";
+  let mode = store.get("mode", "each") === "together" ? "together" : "each";
+
+  // ---- helpers ------------------------------------------------------------
+  const f0 = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
+  const f2 = new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const rs0 = v => "₹" + f0.format(v);
+  const words = v => v >= 1e7 ? `${+(v / 1e7).toFixed(2)} crore` : `${+(v / 1e5).toFixed(2)} lakh`;
+  const short = v => v >= 1e7 ? `${+(v / 1e7).toFixed(2)} Cr` : `${+(v / 1e5).toFixed(2)} L`;
+  const $ = id => document.getElementById(id);
+
+  function slabRate(borrowed, name) {
+    for (const [upto, rate] of PLATFORMS[name]) if (borrowed <= upto) return rate;
+    return PLATFORMS[name].at(-1)[1];
+  }
+  function nextSlab(amount, name) {
+    for (const [upto, rate] of PLATFORMS[name]) {
+      if (amount <= upto) {
+        const i = PLATFORMS[name].findIndex(s => s[0] === upto);
+        const nxt = PLATFORMS[name][i + 1];
+        return nxt ? { from: upto + 1, rate: nxt[1], now: rate } : { now: rate };
+      }
+    }
+    return { now: PLATFORMS[name].at(-1)[1] };
+  }
+
+  function position(s, limit) {
+    const price = Number(s.price) || 0, m = Number(s.margin) || 0;
+    const borrowPer = price * (1 - m / 100);
+    const ok = price > 0 && m >= 0 && m < 100 && borrowPer > 0;
+    const qty = ok ? Math.floor(limit / borrowPer + 1e-9) : 0;
+    const value = qty * price;
+    const own = qty * price * m / 100;
+    return { qty, value, own, borrowed: value - own };
+  }
+
+  function compute() {
+    const limit = STOPS[idx];
+    const per = mode === "together" ? limit / Math.max(stocks.length, 1) : limit;
+    const rows = stocks.map(s => position(s, per));
+    let total = null;
+    if (mode === "together") {
+      total = rows.reduce((t, r) => ({ qty: t.qty + r.qty, value: t.value + r.value, own: t.own + r.own, borrowed: t.borrowed + r.borrowed }),
+                          { qty: 0, value: 0, own: 0, borrowed: 0 });
+    }
+    for (const r of rows) {
+      r.rate = total ? slabRate(total.borrowed, platform) : slabRate(r.borrowed, platform);
+      r.int30 = r.borrowed * r.rate / 100 / 365 * 30;
+    }
+    if (total) { total.rate = slabRate(total.borrowed, platform); total.int30 = total.borrowed * total.rate / 100 / 365 * 30; }
+    return { limit, rows, total };
+  }
+
+  // ---- static pieces ------------------------------------------------------
+  const slider = $("slider");
+  slider.max = String(STOPS.length - 1);
+
+  const nearestIdx = v => STOPS.reduce((best, s, i) => Math.abs(s - v) < Math.abs(STOPS[best] - v) ? i : best, 0);
+  $("scale").innerHTML = SCALE.map(v => {
+    const pct = nearestIdx(v) / (STOPS.length - 1) * 100;
+    return `<span style="left:${pct}%">${short(v).replace(".00", "")}</span>`;
+  }).join("");
+  $("chips").innerHTML = QUICK.map(v => `<button type="button" class="chip" data-v="${v}" aria-pressed="false">₹${short(v).replace(".00", "")}</button>`).join("");
+  $("platforms").innerHTML = Object.keys(PLATFORMS).map(n => `
+    <button type="button" class="plat" data-p="${n}" aria-pressed="false">
+      <span class="plat-top"><span class="plat-name">${n}</span><span class="pill" hidden>Cheapest</span></span>
+      <span class="plat-rate num"></span>
+      <span class="plat-cost num"></span>
+      <span class="plat-extra num"></span>
+    </button>`).join("");
+
+  // ---- table rows (built when the watchlist changes, updated on every move)
+  let cells = [];
+  function buildRows() {
+    const tb = $("rows");
+    tb.innerHTML = "";
+    cells = stocks.map((s, i) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td class="sym"></td>
+        <td><input class="cell-input" type="number" min="0" step="0.05" aria-label="Price of ${s.symbol}"></td>
+        <td><input class="cell-input pct" type="number" min="0" max="99" step="0.5" aria-label="MTF margin percent of ${s.symbol}"></td>
+        <td class="qty"></td><td class="total"></td><td class="dim"></td><td class="dim"></td><td class="dim"></td>
+        <td><button class="rm" type="button" aria-label="Remove ${s.symbol}">×</button></td>`;
+      tr.querySelector(".sym").textContent = s.symbol;
+      const [price, margin] = tr.querySelectorAll("input");
+      price.value = s.price; margin.value = s.margin;
+      price.addEventListener("input", () => { s.price = parseFloat(price.value) || 0; save(); render(); });
+      margin.addEventListener("input", () => { s.margin = parseFloat(margin.value) || 0; save(); render(); });
+      tr.querySelector(".rm").addEventListener("click", () => { stocks.splice(i, 1); save(); buildRows(); render(); });
+      tb.appendChild(tr);
+      const td = tr.querySelectorAll("td");
+      return { qty: td[3], total: td[4], own: td[5], borrowed: td[6], int30: td[7] };
+    });
+  }
+
+  // ---- render -------------------------------------------------------------
+  function render() {
+    const { limit, rows, total } = compute();
+    const pct = idx / (STOPS.length - 1) * 100;
+    slider.value = String(idx);
+    slider.style.setProperty("--pct", pct + "%");
+    slider.setAttribute("aria-valuetext", rs0(limit) + " (" + words(limit) + ")");
+    $("amount").textContent = rs0(limit);
+    $("amount-words").textContent = words(limit) + (mode === "together" ? " in total" : " per stock");
+
+    // live interest-rate indicator, based on what is actually borrowed
+    const basis = total ? total.borrowed : limit;
+    const ns = nextSlab(basis, platform);
+    const box = $("rate-box");
+    const prev = box.dataset.rate;
+    box.dataset.rate = String(ns.now);
+    box.dataset.tone = ns.now < 10 ? "low" : ns.now < 15 ? "mid" : "high";
+    if (prev && prev !== box.dataset.rate) { box.classList.remove("bump"); void box.offsetWidth; box.classList.add("bump"); }
+    $("rate-value").innerHTML = `${ns.now.toFixed(2)}%<small>a year</small>`;
+    $("rate-sub").textContent = `${platform} · ₹${f2.format(basis * ns.now / 100 / 365)} a day`;
+    $("meter").style.width = (8 + 92 * (ns.now - RATE_MIN) / (RATE_MAX - RATE_MIN)) + "%";
+    $("meter-min").textContent = RATE_MIN.toFixed(2) + "%";
+    $("meter-max").textContent = RATE_MAX.toFixed(2) + "%";
+
+    $("slab-note").innerHTML = (ns.from
+      ? `Above ${rs0(ns.from - 1)} borrowed, ${platform} charges <b>${ns.rate.toFixed(2)}%</b> on the whole amount.`
+      : `This is ${platform}'s top slab.`) + ` Orange marks on the slider show where ${platform}'s rate changes.`;
+
+    $("marks").innerHTML = PLATFORMS[platform]
+      .filter(([upto]) => upto >= STOPS[0] && upto < STOPS.at(-1))
+      .map(([upto], i) => {
+        const after = PLATFORMS[platform][PLATFORMS[platform].findIndex(s => s[0] === upto) + 1][1];
+        const pos = (STOPS.findIndex(v => v > upto) - 0.5) / (STOPS.length - 1);
+        return `<div class="slab-mark" style="left:calc(12px + (100% - 24px) * ${pos})"><span>${after.toFixed(2)}%</span></div>`;
+      }).join("");
+
+    document.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", String(Number(c.dataset.v) === limit)));
+
+    // platform cards: interest on the amount actually borrowed
+    $("plat-basis").textContent = total ? `on the ${rs0(basis)} borrowed in total` : `on ${rs0(basis)} borrowed`;
+    const costs = Object.keys(PLATFORMS).map(n => {
+      const rate = slabRate(basis, n);
+      return { n, rate, c: basis * rate / 100 / 365 * 30 };
+    });
+    const min = Math.min(...costs.map(c => c.c));
+    for (const { n, rate, c } of costs) {
+      const el = document.querySelector(`.plat[data-p="${n}"]`);
+      el.setAttribute("aria-pressed", String(n === platform));
+      el.querySelector(".pill").hidden = Math.abs(c - min) > 0.005;
+      el.querySelector(".plat-rate").textContent = rate.toFixed(2) + "% a year";
+      el.querySelector(".plat-cost").textContent = "₹" + f2.format(c);
+      el.querySelector(".plat-extra").textContent = c - min > 0.005 ? `+₹${f2.format(c - min)} vs cheapest` : "";
+    }
+
+    $("int-head").textContent = `₹ · ${platform}`;
+    rows.forEach((r, i) => {
+      const c = cells[i];
+      if (!c) return;
+      c.qty.textContent = f0.format(r.qty);
+      c.qty.classList.toggle("zero", r.qty === 0);
+      c.total.textContent = f2.format(r.value);
+      c.own.textContent = f2.format(r.own);
+      c.borrowed.textContent = f2.format(r.borrowed);
+      c.int30.textContent = f2.format(r.int30);
+    });
+
+    $("foot").innerHTML = total ? `
+      <tr><td>Total</td><td></td><td></td>
+        <td class="num">${f0.format(total.qty)}</td><td class="num">${f2.format(total.value)}</td>
+        <td class="num">${f2.format(total.own)}</td><td class="num">${f2.format(total.borrowed)}</td>
+        <td class="num">${f2.format(total.int30)}</td><td></td></tr>` : "";
+
+    document.querySelectorAll("#mode button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.mode === mode)));
+    $("mode-note").textContent = mode === "together"
+      ? `The amount is split equally across your ${stocks.length} stocks (${rs0(limit / Math.max(stocks.length, 1))} each), so the total you borrow stays under ${rs0(limit)}.`
+      : `Each row shows the most you can buy of that one stock while borrowing up to ${rs0(limit)}.`;
+
+    store.set("idx", idx);
+  }
+
+  function save() { store.set("stocks", stocks); }
+  function setIdx(i) { idx = Math.min(Math.max(0, i), STOPS.length - 1); render(); }
+
+  // ---- events -------------------------------------------------------------
+  slider.addEventListener("input", () => setIdx(Number(slider.value)));
+  $("minus").addEventListener("click", () => setIdx(idx - 1));
+  $("plus").addEventListener("click", () => setIdx(idx + 1));
+  $("chips").addEventListener("click", e => { const c = e.target.closest(".chip"); if (c) setIdx(STOPS.indexOf(Number(c.dataset.v))); });
+  $("platforms").addEventListener("click", e => {
+    const p = e.target.closest(".plat"); if (!p) return;
+    platform = p.dataset.p; store.set("platform", platform); render();
+  });
+  $("mode").addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    mode = b.dataset.mode; store.set("mode", mode); render();
+  });
+
+  function status(msg) { $("status").textContent = msg; }
+  $("add").addEventListener("click", () => {
+    const sym = $("new-sym").value.trim().toUpperCase();
+    const price = parseFloat($("new-price").value);
+    const margin = parseFloat($("new-margin").value);
+    if (!sym) { status("Type a stock symbol to add."); $("new-sym").focus(); return; }
+    if (!(price > 0)) { status("Enter a price above 0."); $("new-price").focus(); return; }
+    const m = isNaN(margin) ? 25 : margin;
+    const existing = stocks.find(s => s.symbol === sym);
+    if (existing) { existing.price = price; existing.margin = m; status(`Updated ${sym}.`); }
+    else { stocks.push({ symbol: sym, price, margin: m }); status(`Added ${sym}.`); }
+    $("new-sym").value = ""; $("new-price").value = ""; $("new-margin").value = "";
+    save(); buildRows(); render();
+  });
+  ["new-sym", "new-price", "new-margin"].forEach(id => $(id).addEventListener("keydown", e => { if (e.key === "Enter") $("add").click(); }));
+
+  $("reset").addEventListener("click", () => {
+    stocks = SAMPLE.map(s => ({ ...s })); save(); buildRows(); render(); status("Sample watchlist restored.");
+  });
+
+  $("import").addEventListener("change", e => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const lines = String(reader.result).split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith("#"));
+      const head = (lines.shift() || "").toLowerCase().split(",").map(h => h.trim());
+      const si = head.indexOf("symbol"), pi = head.indexOf("price"), mi = head.indexOf("margin_pct");
+      if (si < 0 || pi < 0 || mi < 0) { status("That file needs the columns symbol, price and margin_pct."); return; }
+      const parsed = lines.map(l => l.split(",")).map(c => ({ symbol: (c[si] || "").trim().toUpperCase(), price: parseFloat(c[pi]) || 0, margin: parseFloat(c[mi]) || 0 }))
+                          .filter(s => s.symbol);
+      if (!parsed.length) { status("No stocks found in that file."); return; }
+      stocks = parsed; save(); buildRows(); render(); status(`Imported ${parsed.length} stocks from ${file.name}.`);
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  });
+
+  buildRows();
+  render();
+})();
+</script>

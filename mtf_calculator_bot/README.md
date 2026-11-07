@@ -7,25 +7,23 @@ The limit is picked with a **slider from ₹1 lakh (default) to ₹2 crore**. �
 Pocketful's cheapest slab (5.99% p.a.). It also **compares the interest on Pocketful, Dhan, Groww
 and Zerodha** for the same amount.
 
-## Slider app (recommended)
-```bash
-pip install -r requirements.txt
-streamlit run app.py
-```
-This opens in your browser:
+## Interactive page (recommended)
+Open **`mtf_calculator.html`** in any browser. Double-click it; nothing needs installing.
 
-- **Maximum amount to borrow**: a slider from ₹1 L to ₹2 Cr. The steps are ₹10,000 up to ₹10 L,
-  ₹1 L up to ₹1 Cr, then ₹5 L up to ₹2 Cr. Click the slider and use the arrow keys to move one
-  step at a time.
-- **Spread the limit across the whole watchlist**: when this is off, each row is the most you can
-  buy of that stock on its own. When it is on, the limit is shared equally across all stocks so
-  the **total** borrowed stays under it, and a TOTAL row is shown.
-- **Platform**: choose whose interest rates the main table uses (Pocketful by default).
-- **Compare platforms**: interest per day, per 30 days and per year on every platform for the
-  amount you borrow, cheapest first, plus how much extra each one costs. An expander breaks it down
-  per stock.
-- **Use live NSE prices**: fetches current prices with `yfinance`.
-- **Watchlist**: edit stocks, prices and margin % in the app and click *Save watchlist*.
+Everything updates **while you drag the slider**:
+
+- **Amount to borrow via MTF**: a slider from ₹1 L to ₹2 Cr, starting at ₹1 L, with − / + buttons
+  and quick picks (₹1 L, 5 L, 10 L, 25 L, 50 L, 1 Cr, 2 Cr). Orange marks on the slider show where
+  the selected platform's interest rate jumps.
+- **Interest rate now** (beside the slider): the rate you'd pay at the current amount, with the
+  interest per day. It turns green, amber or red as the rate rises.
+- **Interest for 30 days, by platform**: Pocketful, Dhan, Groww and Zerodha side by side, cheapest
+  marked. Click one to use its rates in the table.
+- **Each stock on its own / Whole watchlist together**: either the max of each stock by itself,
+  or the amount split across all stocks so the total stays under the limit (with a Total row).
+- **Watchlist table**: for every stock, the **shares you can buy** and the **total amount**, plus
+  what you pay, what you borrow and the interest. Edit prices and margin % in the table, add or
+  remove stocks, or import `watchlist.csv`. Changes are kept in your browser.
 
 ## Command line
 ```bash
@@ -66,7 +64,8 @@ interest per day   = borrowed × slab rate ÷ 100 ÷ 365
 Where a platform has slabs, the slab is picked by the total borrowed and that rate applies to the
 whole amount. The maximum quantity is the same on every platform when the stock's margin % is the
 same; only the interest changes. Each broker can ask a different margin % for the same stock.
+The rates are set in two places: `PLATFORMS` in `mtf_calculator.py` and in `mtf_calculator.html`.
 
 These rates were taken from the brokers' published pricing in Nov 2026 and change often. Check them
-in each app and edit `PLATFORMS` in `mtf_calculator.py` if they differ. Interest shown excludes
+in each app and edit both places if they differ. Interest shown excludes
 brokerage, GST and pledge charges.

@@ -9,7 +9,7 @@ Pocketful charges 5.99% p.a. on MTF borrowings up to Rs 1 lakh, so the default
 keeps you in the cheapest slab. It also compares the interest cost on other
 platforms (Dhan, Groww, Zerodha) for the same borrowed amount.
 
-For a slider-based UI run:  streamlit run app.py
+For the interactive slider page, open mtf_calculator.html in a browser.
 
 How the numbers are calculated (per stock):
     trade value   = qty * price
