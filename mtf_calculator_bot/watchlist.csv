@@ -1,0 +1,13 @@
+# symbol,price,margin_pct
+# price      -> current price per share in INR (ignored when --live is used)
+# margin_pct -> % of the trade value YOU pay upfront for MTF on this stock
+#               (varies per stock; check the MTF margin shown in your broker app)
+symbol,price,margin_pct
+RELIANCE,1450.00,25
+TCS,3100.00,25
+INFY,1500.00,25
+HDFCBANK,980.00,22
+ICICIBANK,1400.00,22
+SBIN,850.00,25
+ITC,410.00,25
+TATAMOTORS,690.00,30
