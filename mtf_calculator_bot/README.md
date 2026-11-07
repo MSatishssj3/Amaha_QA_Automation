@@ -26,6 +26,10 @@ Everything updates **while you drag the slider**:
   remove stocks, or import `watchlist.csv`. Changes are kept in your browser.
 
 ## Command line
+`mtf_calculator.py` is a thin command-line front end over the reusable
+[`mtf_core`](../mtf_core/README.md) package, which holds all the calculation, rates and data
+loading. Other bots can import `mtf_core` directly.
+
 ```bash
 python mtf_calculator.py                          # each stock on its own, borrowed ≤ 1 lakh
 python mtf_calculator.py --split                  # whole watchlist together, TOTAL borrowed ≤ 1 lakh
@@ -64,8 +68,8 @@ interest per day   = borrowed × slab rate ÷ 100 ÷ 365
 Where a platform has slabs, the slab is picked by the total borrowed and that rate applies to the
 whole amount. The maximum quantity is the same on every platform when the stock's margin % is the
 same; only the interest changes. Each broker can ask a different margin % for the same stock.
-The rates are set in two places: `PLATFORMS` in `mtf_calculator.py` and in `mtf_calculator.html`.
+The rates are set in two places: `mtf_core/rates.json` and a copy in `mtf_calculator.html`.
 
 These rates were taken from the brokers' published pricing in Nov 2026 and change often. Check them
-in each app and edit both places if they differ. Interest shown excludes
+in each app and edit both places if they differ (the tests check they match). Interest shown excludes
 brokerage, GST and pledge charges.

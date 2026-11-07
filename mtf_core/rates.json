@@ -1,0 +1,30 @@
+{
+  "checked": "Nov 2026",
+  "default_platform": "Pocketful",
+  "notes": "MTF interest slabs as published by each broker. The slab is chosen by the TOTAL borrowed and that one rate applies to the whole amount. 'upto' is the largest borrowed amount (INR) the slab covers; null means no upper limit. Brokers change these often: verify in each app.",
+  "sources": {
+    "Pocketful": "https://www.pocketful.in/calculators/mtf-calculator",
+    "Dhan": "https://dhan.co/margin-trading-facility/",
+    "Groww": "https://groww.in/blog/mtf-interest-rates",
+    "Zerodha": "https://support.zerodha.com/category/trading-and-markets/margins/margin-trading-facility/articles/interest-calculation-for-mtf"
+  },
+  "platforms": {
+    "Pocketful": [
+      {"upto": 100000, "rate": 5.99},
+      {"upto": 2500000, "rate": 14.60},
+      {"upto": null, "rate": 16.00}
+    ],
+    "Dhan": [
+      {"upto": 500000, "rate": 12.49},
+      {"upto": 1000000, "rate": 13.49},
+      {"upto": 2500000, "rate": 14.49},
+      {"upto": null, "rate": 15.49}
+    ],
+    "Groww": [
+      {"upto": null, "rate": 14.95}
+    ],
+    "Zerodha": [
+      {"upto": null, "rate": 14.60}
+    ]
+  }
+}

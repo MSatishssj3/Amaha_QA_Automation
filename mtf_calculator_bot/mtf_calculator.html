@@ -407,8 +407,8 @@ button:focus-visible, .chip:focus-visible { outline: 2px solid var(--accent); ou
 <script>
 (() => {
   // ---- data ---------------------------------------------------------------
-  // MTF interest slabs: [borrowed amount up to, % p.a.]. Keep in sync with
-  // PLATFORMS in mtf_calculator.py.
+  // MTF interest slabs: [borrowed amount up to, % p.a.]. Copy of
+  // mtf_core/rates.json; tests/test_mtf_core.py fails if the two differ.
   const INF = Infinity;
   const PLATFORMS = {
     Pocketful: [[100000, 5.99], [2500000, 14.60], [INF, 16.00]],
