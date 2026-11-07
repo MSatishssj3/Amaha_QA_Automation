@@ -6,7 +6,8 @@ For every stock in your watchlist, works out the maximum number of shares you
 can buy using MTF (Margin Trading Facility) such that the amount BORROWED from
 the broker stays under a chosen limit (Rs 1 lakh by default, up to Rs 2 crore).
 Pocketful charges 5.99% p.a. on MTF borrowings up to Rs 1 lakh, so the default
-keeps you in the cheapest slab.
+keeps you in the cheapest slab. It also compares the interest cost on other
+platforms (Dhan, Groww, Zerodha) for the same borrowed amount.
 
 For a slider-based UI run:  streamlit run app.py
 
@@ -17,14 +18,15 @@ How the numbers are calculated (per stock):
     max qty       = largest qty with borrowed <= max borrow
                     (and your margin <= --capital, if given)
     interest/day  = borrowed * rate / 100 / 365
-    rate          = slab rate for the borrowed amount (see INTEREST_SLABS),
-                    unless --rate is given
+    rate          = the platform's slab rate for the borrowed amount
+                    (see PLATFORMS), unless --rate is given
 
 Usage examples:
     python mtf_calculator.py
     python mtf_calculator.py --max-borrow 500000
     python mtf_calculator.py --capital 30000
     python mtf_calculator.py --split            # share the limit across all stocks
+    python mtf_calculator.py --platform Dhan    # use Dhan's rates in the main table
     python mtf_calculator.py --live             # fetch live NSE prices (needs yfinance)
     python mtf_calculator.py --csv results.csv  # also save the table to CSV
 
@@ -45,22 +47,44 @@ MIN_BORROW = 1_00_000.0
 MAX_BORROW = 2_00_00_000.0
 DEFAULT_MAX_BORROW = MIN_BORROW
 
-# Pocketful MTF interest slabs as (borrowed amount up to, % p.a.).
-# The slab is chosen by the total borrowed and that rate applies to all of it.
-# Verify against the Pocketful app / MTF calculator and edit here if they change.
-INTEREST_SLABS = [
-    (1_00_000, 5.99),
-    (25_00_000, 14.60),
-    (float("inf"), 16.00),
-]
+# MTF interest slabs per platform as (borrowed amount up to, % p.a.).
+# On every platform the slab is chosen by the TOTAL borrowed and that one rate
+# applies to the whole amount (not just the part above the slab boundary).
+# Taken from each broker's published MTF pricing (checked Nov 2026). Brokers
+# change these often -- verify in the app and edit here if they differ.
+#   Pocketful: pocketful.in/calculators/mtf-calculator
+#   Dhan:      dhan.co/margin-trading-facility  (top slab capped at 15.49%)
+#   Groww:     groww.in/blog/mtf-interest-rates (flat 0.041%/day)
+#   Zerodha:   support.zerodha.com MTF interest (flat 0.04%/day)
+INF = float("inf")
+PLATFORMS = {
+    "Pocketful": [(1_00_000, 5.99), (25_00_000, 14.60), (INF, 16.00)],
+    "Dhan": [(5_00_000, 12.49), (10_00_000, 13.49), (25_00_000, 14.49), (INF, 15.49)],
+    "Groww": [(INF, 14.95)],
+    "Zerodha": [(INF, 14.60)],
+}
+DEFAULT_PLATFORM = "Pocketful"
+RATES_CHECKED = "Nov 2026"
 
 
-def slab_rate(borrowed):
-    """Interest rate (% p.a.) for a given borrowed amount."""
-    for upto, rate in INTEREST_SLABS:
+def slab_rate(borrowed, platform=DEFAULT_PLATFORM):
+    """Interest rate (% p.a.) a platform charges for a given borrowed amount."""
+    slabs = PLATFORMS[platform]
+    for upto, rate in slabs:
         if borrowed <= upto:
             return rate
-    return INTEREST_SLABS[-1][1]
+    return slabs[-1][1]
+
+
+def compare_platforms(borrowed):
+    """Interest cost of borrowing `borrowed` on every platform, cheapest first."""
+    out = []
+    for name in PLATFORMS:
+        rate = slab_rate(borrowed, name)
+        day = borrowed * rate / 100 / 365
+        out.append({"platform": name, "rate": rate, "interest_day": day,
+                    "interest_month": day * 30, "interest_year": day * 365})
+    return sorted(out, key=lambda r: r["rate"])
 
 
 def load_watchlist(path):
@@ -96,10 +120,10 @@ def fetch_live_prices(stocks, exchange_suffix=".NS"):
             print(f"! Could not fetch {s['symbol']}: {exc}  (using CSV price)")
 
 
-def calculate(stock, max_borrow, rate=None, capital=None):
+def calculate(stock, max_borrow, rate=None, capital=None, platform=DEFAULT_PLATFORM):
     """Return the max-qty MTF position for one stock.
 
-    rate=None -> use the slab rate for this position's borrowed amount.
+    rate=None -> use the platform's slab rate for this position's borrowed amount.
     """
     price = stock["price"]
     margin_pct = stock["margin_pct"]
@@ -118,7 +142,7 @@ def calculate(stock, max_borrow, rate=None, capital=None):
     own = qty * own_per_share
     borrowed = value - own
     if rate is None:
-        rate = slab_rate(borrowed)
+        rate = slab_rate(borrowed, platform)
     interest_day = borrowed * rate / 100 / 365
     return {
         "symbol": stock["symbol"],
@@ -137,7 +161,8 @@ def calculate(stock, max_borrow, rate=None, capital=None):
 TOTAL_KEYS = ("qty", "value", "own", "borrowed", "interest_day", "interest_month")
 
 
-def build_table(stocks, max_borrow, split=False, rate=None, capital=None):
+def build_table(stocks, max_borrow, split=False, rate=None, capital=None,
+                platform=DEFAULT_PLATFORM):
     """Calculate every watchlist row.
 
     split=False -> each row is the max for that stock on its own.
@@ -149,13 +174,13 @@ def build_table(stocks, max_borrow, split=False, rate=None, capital=None):
     n = len(stocks) if split else 1
     per_borrow = max_borrow / n
     per_capital = capital / n if capital is not None else None
-    rows = [calculate(s, per_borrow, rate, per_capital) for s in stocks]
+    rows = [calculate(s, per_borrow, rate, per_capital, platform) for s in stocks]
     if not split:
         return rows, None
 
     total_borrowed = sum(r["borrowed"] for r in rows)
-    book_rate = rate if rate is not None else slab_rate(total_borrowed)
-    rows = [calculate(s, per_borrow, book_rate, per_capital) for s in stocks]
+    book_rate = rate if rate is not None else slab_rate(total_borrowed, platform)
+    rows = [calculate(s, per_borrow, book_rate, per_capital, platform) for s in stocks]
     totals = {k: sum(r[k] for r in rows) for k in TOTAL_KEYS}
     totals["rate"] = book_rate
     return rows, totals
@@ -191,12 +216,21 @@ COLUMNS = [
 ]
 
 
-def render_table(rows, total_row=None):
+COMPARE_COLUMNS = [
+    ("Platform", "platform", str),
+    ("Rate % p.a.", "rate", lambda v: f"{v:.2f}%"),
+    ("Interest/Day", "interest_day", inr),
+    ("Interest/30d", "interest_month", inr),
+    ("Interest/Year", "interest_year", inr),
+]
+
+
+def render_table(rows, total_row=None, columns=COLUMNS):
     """Plain-text table with no third-party dependencies."""
-    body = [[fmt(r[key]) for _, key, fmt in COLUMNS] for r in rows]
+    body = [[fmt(r[key]) for _, key, fmt in columns] for r in rows]
     if total_row:
         body.append(total_row)
-    headers = [h for h, _, _ in COLUMNS]
+    headers = [h for h, _, _ in columns]
     widths = [max(len(h), *(len(r[i]) for r in body)) if body else len(h)
               for i, h in enumerate(headers)]
 
@@ -239,7 +273,9 @@ def main(argv=None):
     p.add_argument("--max-borrow", type=amount_in_range, default=DEFAULT_MAX_BORROW,
                    help="max amount to borrow in INR, 100000 (1 lakh, default) to 20000000 (2 crore)")
     p.add_argument("--rate", type=float, default=None,
-                   help="override the interest rate, %% p.a. (default: Pocketful slab rate)")
+                   help="override the interest rate, %% p.a. (default: the platform's slab rate)")
+    p.add_argument("--platform", choices=list(PLATFORMS), default=DEFAULT_PLATFORM,
+                   help="whose interest rates to use in the main table (default Pocketful)")
     p.add_argument("--capital", type=float, default=None,
                    help="your own cash available for margin, in INR (optional cap)")
     p.add_argument("--split", action="store_true",
@@ -255,12 +291,13 @@ def main(argv=None):
     if args.live:
         fetch_live_prices(stocks)
 
-    rows, totals = build_table(stocks, args.max_borrow, args.split, args.rate, args.capital)
+    rows, totals = build_table(stocks, args.max_borrow, args.split, args.rate, args.capital,
+                               args.platform)
     n = len(stocks) if args.split else 1
 
     print("MTF Calculator Bot")
     print("  Interest rate : " + (f"{args.rate}% p.a. (override)" if args.rate is not None
-                                  else "Pocketful slab rate for the borrowed amount"))
+                                  else f"{args.platform} slab rate for the borrowed amount"))
     print(f"  Max borrow    : Rs {inr(args.max_borrow)}"
           + (f"  (split -> Rs {inr(args.max_borrow / n)} per stock)" if args.split
              else "  (per stock)"))
@@ -279,6 +316,13 @@ def main(argv=None):
     if not args.split:
         print("\nEach row is independent: it is the max you can buy of THAT stock alone.")
         print("Use --split to buy across all stocks with the total borrowed under the limit.")
+
+    compare_amount = totals["borrowed"] if totals else args.max_borrow
+    print(f"\nInterest on other platforms for borrowing Rs {inr(compare_amount)} "
+          f"(rates checked {RATES_CHECKED}, cheapest first):")
+    print(render_table(compare_platforms(compare_amount), columns=COMPARE_COLUMNS))
+    print("Max qty is the same on every platform if the margin % is the same; "
+          "only the interest differs.")
 
     if args.csv:
         save_csv(rows, args.csv)

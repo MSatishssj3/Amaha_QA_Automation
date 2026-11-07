@@ -4,7 +4,8 @@ MTF Calculator Bot -- slider UI
 
 Pick the maximum amount you want to borrow with a slider (Rs 1 lakh to Rs 2 crore,
 default Rs 1 lakh) and see, for every stock in your watchlist, how many shares you
-can buy with MTF without the borrowed amount going over that limit.
+can buy with MTF without the borrowed amount going over that limit, and compare
+the interest on Pocketful, Dhan, Groww and Zerodha.
 
 Run:
     pip install -r requirements.txt
@@ -18,11 +19,14 @@ import streamlit as st
 
 from mtf_calculator import (
     DEFAULT_MAX_BORROW,
+    DEFAULT_PLATFORM,
     DEFAULT_WATCHLIST,
-    INTEREST_SLABS,
     MAX_BORROW,
     MIN_BORROW,
+    PLATFORMS,
+    RATES_CHECKED,
     build_table,
+    compare_platforms,
     fetch_live_prices,
     inr,
     load_watchlist,
@@ -73,6 +77,13 @@ max_borrow = st.select_slider(
     format_func=short_inr,
     help="Default ₹1 lakh keeps you in Pocketful's 5.99% slab. Drag up to ₹2 crore. "
          "Click it and use the arrow keys to move one step at a time.",
+)
+
+platform = st.radio(
+    "Platform (whose interest rates the table uses)",
+    options=list(PLATFORMS),
+    index=list(PLATFORMS).index(DEFAULT_PLATFORM),
+    horizontal=True,
 )
 
 c1, c2 = st.columns(2)
@@ -133,19 +144,19 @@ if use_live:
             s["price"] = prices[s["symbol"]]
 
 # ---------------------------------------------------------------- results
-rows, totals = build_table(stocks, float(max_borrow), split=split)
+rows, totals = build_table(stocks, float(max_borrow), split=split, platform=platform)
 
 if totals:
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Borrow limit (total)", rupees(max_borrow))
     m2.metric("Total borrowed", rupees(totals["borrowed"]))
-    m3.metric("Interest rate", f"{totals['rate']:.2f}% p.a.")
+    m3.metric(f"Interest rate ({platform})", f"{totals['rate']:.2f}% p.a.")
     m4.metric("Interest per day", rupees(totals["interest_day"]))
 else:
     m1, m2, m3 = st.columns(3)
     m1.metric("Borrow limit (per stock)", rupees(max_borrow))
     m2.metric("Stocks in watchlist", len(rows))
-    m3.metric("Interest rate",
+    m3.metric(f"Interest rate ({platform})",
               " / ".join(f"{r:.2f}%" for r in sorted({r["rate"] for r in rows})) + " p.a.")
 
 table = pd.DataFrame(rows).rename(columns={
@@ -186,19 +197,68 @@ st.caption(
      "Turn on “Spread the limit” to buy the whole watchlist together.")
 )
 
-with st.expander("Interest slabs used"):
+# ---------------------------------------------------------------- compare platforms
+st.subheader("Compare platforms")
+compare_amount = totals["borrowed"] if totals else float(max_borrow)
+st.caption(f"Interest for borrowing **{rupees(compare_amount)}**, cheapest first. "
+           "The max quantity is the same on every platform if the stock's margin % is the "
+           "same; only the interest changes.")
+
+comp = compare_platforms(compare_amount)
+cheapest = comp[0]["interest_month"]
+comp_table = pd.DataFrame([{
+    "Platform": c["platform"] + (" (cheapest)" if c["interest_month"] == cheapest else ""),
+    "Rate % p.a.": c["rate"],
+    "Interest/Day (₹)": c["interest_day"],
+    "Interest/30d (₹)": c["interest_month"],
+    "Interest/Year (₹)": c["interest_year"],
+    "Extra vs cheapest /30d (₹)": c["interest_month"] - cheapest,
+} for c in comp])
+comp_money = [c for c in comp_table.columns if "(₹)" in c]
+comp_styled = (
+    comp_table.style
+    .format({**{c: inr for c in comp_money}, "Rate % p.a.": lambda v: f"{v:.2f}%"})
+    .hide(axis="index")
+    .set_properties(subset=["Rate % p.a."] + comp_money, **{"text-align": "right"})
+    .apply(lambda r: ["font-weight: bold" if r["Platform"].startswith(platform) else ""
+                      for _ in r], axis=1)
+)
+st.table(comp_styled)
+
+with st.expander("Interest per 30 days for each stock, by platform"):
+    per_stock = {r["symbol"]: {} for r in rows}
+    for name in PLATFORMS:
+        p_rows, _ = build_table(stocks, float(max_borrow), split=split, platform=name)
+        for r in p_rows:
+            per_stock[r["symbol"]][f"{name} (₹)"] = r["interest_month"]
+    matrix = pd.DataFrame.from_dict(per_stock, orient="index")
+    matrix.index.name = "Stock"
+    st.table(matrix.reset_index().style
+             .format({c: inr for c in matrix.columns})
+             .hide(axis="index")
+             .set_properties(subset=list(matrix.columns), **{"text-align": "right"}))
+
+with st.expander("Interest slabs by platform"):
     whole = lambda v: "₹" + inr(v)[:-3]
-    lines, lower = [], 0
-    for upto, rate in INTEREST_SLABS:
-        if lower == 0:
-            label = f"Up to {whole(upto)}"
-        elif upto == float("inf"):
-            label = f"Above {whole(lower)}"
-        else:
-            label = f"{whole(lower + 1)} to {whole(upto)}"
-        lines.append(f"- {label}: **{rate:.2f}% p.a.**")
-        lower = upto
-    st.markdown("\n".join(lines))
-    st.caption("The slab is picked by the total borrowed and that rate applies to the whole "
-               "amount. Interest excludes GST and pledge charges. Check the current rates in "
-               "the Pocketful app and edit INTEREST_SLABS in mtf_calculator.py if they change.")
+    lines = []
+    for name, slabs in PLATFORMS.items():
+        if len(slabs) == 1:
+            lines.append(f"**{name}**: {slabs[0][1]:.2f}% p.a. on any amount")
+            continue
+        parts, lower = [], 0
+        for upto, rate in slabs:
+            if lower == 0:
+                label = f"up to {whole(upto)}"
+            elif upto == float("inf"):
+                label = f"above {whole(lower)}"
+            else:
+                label = f"{whole(lower + 1)} to {whole(upto)}"
+            parts.append(f"{label}: {rate:.2f}%")
+            lower = upto
+        lines.append(f"**{name}**: " + " · ".join(parts))
+    st.markdown("\n\n".join(lines))
+    st.caption(f"Rates as published by each broker, checked {RATES_CHECKED}. The slab is picked "
+               "by the total borrowed and that rate applies to the whole amount. Interest "
+               "excludes brokerage, GST and pledge charges, and each broker can ask a different "
+               "margin % for the same stock. Brokers change these often: check the app and edit "
+               "PLATFORMS in mtf_calculator.py if they differ.")
