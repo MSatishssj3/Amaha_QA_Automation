@@ -4,7 +4,7 @@ MTF Calculator Bot
 
 For every stock in your watchlist, works out the maximum number of shares you
 can buy using MTF (Margin Trading Facility) such that the amount BORROWED from
-the broker stays under a chosen limit (Rs 1 lakh by default, up to Rs 2 crore).
+the broker stays under a chosen limit (Rs 100 to Rs 2 crore, Rs 1 lakh by default).
 Pocketful charges 5.99% p.a. on MTF borrowings up to Rs 1 lakh, so the default
 keeps you in the cheapest slab. It also compares the interest cost on other
 platforms (Dhan, Groww, Zerodha) for the same borrowed amount.
@@ -42,10 +42,10 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_WATCHLIST = os.path.join(HERE, "watchlist.csv")
 
-# Borrow limit: default Rs 1 lakh, adjustable up to Rs 2 crore.
-MIN_BORROW = 1_00_000.0
+# Borrow limit: Rs 100 to Rs 2 crore, Rs 1 lakh by default.
+MIN_BORROW = 100.0
 MAX_BORROW = 2_00_00_000.0
-DEFAULT_MAX_BORROW = MIN_BORROW
+DEFAULT_MAX_BORROW = 1_00_000.0
 
 # MTF interest slabs per platform as (borrowed amount up to, % p.a.).
 # On every platform the slab is chosen by the TOTAL borrowed and that one rate
@@ -263,7 +263,7 @@ def amount_in_range(text):
     value = float(text)
     if not MIN_BORROW <= value <= MAX_BORROW:
         raise argparse.ArgumentTypeError(
-            f"must be between {inr(MIN_BORROW)} (1 lakh) and {inr(MAX_BORROW)} (2 crore)")
+            f"must be between {inr(MIN_BORROW)} and {inr(MAX_BORROW)} (2 crore)")
     return value
 
 
@@ -271,7 +271,7 @@ def main(argv=None):
     p = argparse.ArgumentParser(description="MTF max-quantity calculator for your watchlist")
     p.add_argument("--watchlist", default=DEFAULT_WATCHLIST, help="path to watchlist CSV")
     p.add_argument("--max-borrow", type=amount_in_range, default=DEFAULT_MAX_BORROW,
-                   help="max amount to borrow in INR, 100000 (1 lakh, default) to 20000000 (2 crore)")
+                   help="max amount to borrow in INR, 100 to 20000000 (2 crore); default 100000 (1 lakh)")
     p.add_argument("--rate", type=float, default=None,
                    help="override the interest rate, %% p.a. (default: the platform's slab rate)")
     p.add_argument("--platform", choices=list(PLATFORMS), default=DEFAULT_PLATFORM,

@@ -320,7 +320,7 @@ button:focus-visible, .chip:focus-visible { outline: 2px solid var(--accent); ou
           <button class="step-btn" id="minus" type="button" aria-label="Decrease amount">−</button>
           <div class="slider-box">
             <div class="track-wrap">
-              <input type="range" id="slider" min="0" max="200" step="1" value="0" aria-labelledby="amount-label">
+              <input type="range" id="slider" min="0" max="236" step="1" value="36" aria-labelledby="amount-label">
               <div id="marks" aria-hidden="true"></div>
             </div>
             <div class="scale" id="scale" aria-hidden="true"></div>
@@ -427,15 +427,21 @@ button:focus-visible, .chip:focus-visible { outline: 2px solid var(--accent); ou
     { symbol: "TATAMOTORS", price: 690, margin: 30 },
   ];
 
-  // Slider stops: Rs 10,000 steps to 10 L, Rs 1 L steps to 1 Cr, Rs 5 L steps to 2 Cr.
+  // Slider stops: Rs 100 steps to 1,000, Rs 1,000 steps to 10,000, Rs 5,000 steps
+  // to 1 L, Rs 10,000 steps to 10 L, Rs 1 L steps to 1 Cr, Rs 5 L steps to 2 Cr.
+  const MIN_AMOUNT = 100, DEFAULT_AMOUNT = 100000;
   const STOPS = [];
+  for (let v = MIN_AMOUNT; v < 1000; v += 100) STOPS.push(v);
+  for (let v = 1000; v < 10000; v += 1000) STOPS.push(v);
+  for (let v = 10000; v < 100000; v += 5000) STOPS.push(v);
   for (let v = 100000; v < 1000000; v += 10000) STOPS.push(v);
   for (let v = 1000000; v < 10000000; v += 100000) STOPS.push(v);
   for (let v = 10000000; v <= 20000000; v += 500000) STOPS.push(v);
   const ALL_RATES = Object.values(PLATFORMS).flat().map(s => s[1]);
   const RATE_MIN = Math.min(...ALL_RATES), RATE_MAX = Math.max(...ALL_RATES);
-  const QUICK = [100000, 500000, 1000000, 2500000, 5000000, 10000000, 20000000];
-  const SCALE = [100000, 500000, 1000000, 5000000, 20000000];
+  const QUICK = [10000, 100000, 500000, 1000000, 2500000, 5000000, 10000000, 20000000];
+  const SCALE = [100, 100000, 1000000, 5000000, 20000000];
+  const nearestIdx = v => STOPS.reduce((best, s, i) => Math.abs(s - v) < Math.abs(STOPS[best] - v) ? i : best, 0);
 
   // ---- state --------------------------------------------------------------
   const store = {
@@ -444,7 +450,7 @@ button:focus-visible, .chip:focus-visible { outline: 2px solid var(--accent); ou
   };
   let stocks = store.get("stocks", null);
   if (!Array.isArray(stocks) || !stocks.length) stocks = SAMPLE.map(s => ({ ...s }));
-  let idx = Math.min(Math.max(0, Number(store.get("idx", 0)) || 0), STOPS.length - 1);
+  let idx = nearestIdx(DEFAULT_AMOUNT);  // always open at Rs 1 lakh
   let platform = store.get("platform", "Pocketful");
   if (!PLATFORMS[platform]) platform = "Pocketful";
   let mode = store.get("mode", "each") === "together" ? "together" : "each";
@@ -453,8 +459,14 @@ button:focus-visible, .chip:focus-visible { outline: 2px solid var(--accent); ou
   const f0 = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
   const f2 = new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const rs0 = v => "₹" + f0.format(v);
-  const words = v => v >= 1e7 ? `${+(v / 1e7).toFixed(2)} crore` : `${+(v / 1e5).toFixed(2)} lakh`;
-  const short = v => v >= 1e7 ? `${+(v / 1e7).toFixed(2)} Cr` : `${+(v / 1e5).toFixed(2)} L`;
+  const words = v => v >= 1e7 ? `${+(v / 1e7).toFixed(2)} crore`
+                  : v >= 1e5 ? `${+(v / 1e5).toFixed(2)} lakh`
+                  : v >= 1e3 ? `${+(v / 1e3).toFixed(2)} thousand`
+                  : `${v} rupees`;
+  const short = v => v >= 1e7 ? `${+(v / 1e7).toFixed(2)} Cr`
+                  : v >= 1e5 ? `${+(v / 1e5).toFixed(2)} L`
+                  : v >= 1e3 ? `${+(v / 1e3).toFixed(2)} K`
+                  : String(v);
   const $ = id => document.getElementById(id);
 
   function slabRate(borrowed, name) {
@@ -503,12 +515,11 @@ button:focus-visible, .chip:focus-visible { outline: 2px solid var(--accent); ou
   const slider = $("slider");
   slider.max = String(STOPS.length - 1);
 
-  const nearestIdx = v => STOPS.reduce((best, s, i) => Math.abs(s - v) < Math.abs(STOPS[best] - v) ? i : best, 0);
   $("scale").innerHTML = SCALE.map(v => {
     const pct = nearestIdx(v) / (STOPS.length - 1) * 100;
-    return `<span style="left:${pct}%">${short(v).replace(".00", "")}</span>`;
+    return `<span style="left:${pct}%">₹${short(v)}</span>`;
   }).join("");
-  $("chips").innerHTML = QUICK.map(v => `<button type="button" class="chip" data-v="${v}" aria-pressed="false">₹${short(v).replace(".00", "")}</button>`).join("");
+  $("chips").innerHTML = QUICK.map(v => `<button type="button" class="chip" data-v="${v}" aria-pressed="false">₹${short(v)}</button>`).join("");
   $("platforms").innerHTML = Object.keys(PLATFORMS).map(n => `
     <button type="button" class="plat" data-p="${n}" aria-pressed="false">
       <span class="plat-top"><span class="plat-name">${n}</span><span class="pill" hidden>Cheapest</span></span>
@@ -619,7 +630,6 @@ button:focus-visible, .chip:focus-visible { outline: 2px solid var(--accent); ou
       ? `The amount is split equally across your ${stocks.length} stocks (${rs0(limit / Math.max(stocks.length, 1))} each), so the total you borrow stays under ${rs0(limit)}.`
       : `Each row shows the most you can buy of that one stock while borrowing up to ${rs0(limit)}.`;
 
-    store.set("idx", idx);
   }
 
   function save() { store.set("stocks", stocks); }

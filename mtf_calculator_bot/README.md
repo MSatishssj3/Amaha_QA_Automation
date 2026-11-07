@@ -3,7 +3,7 @@
 Shows, for every stock in your watchlist, the **maximum number of shares you can buy with MTF**
 (Margin Trading Facility) so that the **amount borrowed from the broker stays under your limit**.
 
-The limit is picked with a **slider from ₹1 lakh (default) to ₹2 crore**. ₹1 lakh keeps you in
+The limit is picked with a **slider from ₹100 to ₹2 crore, starting at ₹1 lakh**. ₹1 lakh keeps you in
 Pocketful's cheapest slab (5.99% p.a.). It also **compares the interest on Pocketful, Dhan, Groww
 and Zerodha** for the same amount.
 
@@ -12,8 +12,8 @@ Open **`mtf_calculator.html`** in any browser. Double-click it; nothing needs in
 
 Everything updates **while you drag the slider**:
 
-- **Amount to borrow via MTF**: a slider from ₹1 L to ₹2 Cr, starting at ₹1 L, with − / + buttons
-  and quick picks (₹1 L, 5 L, 10 L, 25 L, 50 L, 1 Cr, 2 Cr). Orange marks on the slider show where
+- **Amount to borrow via MTF**: a slider from ₹100 to ₹2 Cr, starting at ₹1 L, with − / + buttons
+  and quick picks (₹10 K, 1 L, 5 L, 10 L, 25 L, 50 L, 1 Cr, 2 Cr). Orange marks on the slider show where
   the selected platform's interest rate jumps.
 - **Interest rate now** (beside the slider): the rate you'd pay at the current amount, with the
   interest per day. It turns green, amber or red as the rate rises.
@@ -29,7 +29,7 @@ Everything updates **while you drag the slider**:
 ```bash
 python mtf_calculator.py                          # each stock on its own, borrowed ≤ 1 lakh
 python mtf_calculator.py --split                  # whole watchlist together, TOTAL borrowed ≤ 1 lakh
-python mtf_calculator.py --max-borrow 500000      # any amount from 100000 (1 L) to 20000000 (2 Cr)
+python mtf_calculator.py --max-borrow 500000      # any amount from 100 to 20000000 (2 Cr)
 python mtf_calculator.py --capital 30000          # also cap by your own cash
 python mtf_calculator.py --platform Dhan          # use Dhan / Groww / Zerodha rates in the table
 python mtf_calculator.py --rate 9.99              # override the slab rate
